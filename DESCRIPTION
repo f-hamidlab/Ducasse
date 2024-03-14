@@ -8,13 +8,17 @@ Description: Text text
 Depends: R (>= 4.2)
 biocViews: ?
 Imports:
+    dplyr,
     BiocGenerics (>= 0.38)
 License: file LICENSE
 Encoding: UTF-8
 ByteCompile: true
-RoxygenNote: 7.2.3
+RoxygenNote: 7.3.1
 Suggests: 
-    testthat (>= 3.0.0)
+    testthat (>= 3.0.0),
+    GenomicRanges,
+    S4Vectors,
+    rtracklayer
 VignetteBuilder: knitr
 LazyData: FALSE
 BiocType: Software
