@@ -1,18 +1,21 @@
 
 # TESTDATA:
-## TODO: Remove these later
-gtf.file <-  system.file("extdata/pb_custom.gtf.gz", package = "factR2")
-gtf <- rtracklayer::import(gtf.file)
+## We have test.gtf (GRanges object) that we can use to test the funcs
 
 
 #' @importFrom dplyr %>%
 #TODO: Need a better name for this function
 detection <- function(gtf){
     
-    # Check inputs
+    # TODO: Check inputs
     ## Can be path to gtf file or a GenomicRanges object
     
-    ## prefilter for genes with at least 2 multi-exonic transcripts
+    
+    
+    # TODO: Prefilter for genes with at least 2 multi-exonic transcripts
+    
+    
+    
     
     # get only exon entries from GTF
     exons <- gtf[gtf$type == "exon"]
@@ -27,13 +30,14 @@ detection <- function(gtf){
     disjoint.exons <- .disjoin_by_gene(exons)
 
     
-    # Pair up all exons with flanking introns
+    # TODO:  Pair up all exons with flanking introns
     
-    # Pair up all exons with "skipping" introns
+    # TODO:  Pair up all exons with "skipping" introns
     
-    # Output 1) metadata of all exons, 2) adjacency matrix of exons and flanking introns
-    # 3) adjacency matrix of exons and skipped introns
-    return(disjoint.exons)
+    # TODO:  Output
+    ## 1) metadata of all exons, 2) adjacency matrix of exons and flanking introns
+    ## 3) adjacency matrix of exons and skipped introns
+    return()
     
 }
 
@@ -48,7 +52,20 @@ detection <- function(gtf){
         dplyr::select(seqnames:gene_id) %>% 
         GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = TRUE)
     
-    # TODO: add other metadata such as gene names, transcript_ids
+    y$order <- 1:length(y)
+    out <- IRanges::findOverlapPairs(y, x, type="within")
+    out <- out[S4Vectors::first(out)$gene_id == S4Vectors::second(out)$gene_id ]
+    
+    out <- out %>% 
+        as.data.frame() %>% 
+        dplyr::select(order = first.order, gene_name = second.gene_name, 
+                      transcript_id = second.transcript_id) %>% 
+        dplyr::group_by(order) %>% 
+        dplyr::summarise(gene_name = gene_name[1], 
+                         transcript_id = paste0(transcript_id, collapse = ";"))
+    y$gene_name <- out$gene_name
+    y$transcript_ids <- out$transcript_id
+    y$order <- NULL
     
     return(y)
     
