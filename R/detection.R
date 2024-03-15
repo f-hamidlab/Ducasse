@@ -30,7 +30,12 @@ detection <- function(gtf){
     disjoint.exons <- .disjoin_by_gene(exons)
 
     
-    # TODO:  Pair up all exons with flanking introns
+    # TODO:  Pair up all exons from disjoint.exons with flanking introns
+    ## GenomicRanges::findOverlaps
+    ## Output a df with these columns:
+    #   1. Exon coordinate
+    #   2. Intron coordinate for each hit
+    #   3. Position (Upstream or downstream)
     
     # TODO:  Pair up all exons with "skipping" introns
     
