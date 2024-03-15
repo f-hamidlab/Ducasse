@@ -9,4 +9,6 @@
 library(testthat)
 library(Ducasse)
 
+data("test.gtf")
+
 test_check("Ducasse")
