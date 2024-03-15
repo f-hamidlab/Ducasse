@@ -81,23 +81,24 @@ detection <- function(gtf){
     return(y)
 
 .pair_by_exon_intron <- function(x, y){
+    x$index <- 1:length(x)
   overlap <- IRanges::findOverlapPairs(x, y, maxgap = 0L)
   adjacent <- subset(overlap, IRanges::start(first) == IRanges::end(second) + 1L | 
                        IRanges::end(first) == IRanges::start(second) - 1L)
   
   pair_df <- as.data.frame(adjacent) %>% 
-    dplyr::mutate(exonCoord = paste0(first.X.seqnames, "_", first.X.start, ":", first.X.end)) %>% 
-    dplyr::mutate(intronCoord = paste0(second.seqnames, "_", second.start, ":", second.end)) %>% 
     dplyr::mutate(position = ifelse(first.X.start == second.end + 1, "Upstream", "Downstream")) %>% 
-    dplyr::select(exonCoord, intronCoord, position)
+    dplyr::select(original.index=first.index,  position) %>% 
+    dplyr::mutate(overlapped.index = dplyr::row_number())
+  GenomicRanges::mcols(adjacent) <- pair_df
   
-  disjoint_df <- as.data.frame(x) %>% 
-    dplyr::mutate(exonCoord = paste0(seqnames, "_", start, ":", end)) %>% 
-    dplyr::select(exonCoord)
+  # disjoint_df <- as.data.frame(x) %>% 
+  #   dplyr::mutate(exonCoord = paste0(seqnames, "_", start, ":", end)) %>% 
+  #   dplyr::select(exonCoord)
+  # 
+  # merge <- dplyr::full_join(x = disjoint_df, y = pair_df, "exonCoord")
   
-  merge <- dplyr::full_join(x = disjoint_df, y = pair_df, "exonCoord")
-  
-  return(merge)
+  return(adjacent)
 }        
     
 }
