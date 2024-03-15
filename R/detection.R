@@ -10,15 +10,20 @@ detection <- function(gtf){
     # TODO: Check inputs
     ## Can be path to gtf file or a GenomicRanges object
     
-    
-    
-    # TODO: Prefilter for genes with at least 2 multi-exonic transcripts
-    
-    
-    
-    
     # get only exon entries from GTF
     exons <- gtf[gtf$type == "exon"]
+    
+    # TODO: Prefilter for genes with at least 2 multi-exonic transcripts
+    transcript_counts <- table(GenomicRanges::mcols(exons)$transcript_id)
+    transcripts <- gtf[gtf$type == "transcript"]
+    multi_transcripts <- transcript_counts[transcript_counts > 2]
+    transcripts_filtered <- transcripts[transcripts$transcript_id %in% names(multi_transcripts)]
+    gene_ids <- table(GenomicRanges::mcols(transcripts_filtered)$gene_id)
+    multi_exonic_genes <- names(gene_ids[gene_ids > 1])
+    gtf_filtered <- gtf[gtf$gene_id %in% multi_exonic_genes]
+    
+    # get only exon entries from prefiltered GTF
+    exons <- gtf_filtered[gtf_filtered$type == "exon"]
     
     # Create a GenomicRanges object of all non-redundant introns
     exonsbytx <- S4Vectors::split(exons, ~transcript_id)
@@ -36,6 +41,7 @@ detection <- function(gtf){
     #   1. Exon coordinate
     #   2. Intron coordinate for each hit
     #   3. Position (Upstream or downstream)
+    exon.intron.pairs <- .pair_by_exon_intron(disjoint.exons, introns.nr)
     
     # TODO:  Pair up all exons with "skipping" introns
     
@@ -73,6 +79,25 @@ detection <- function(gtf){
     y$order <- NULL
     
     return(y)
-    
+
+.pair_by_exon_intron <- function(x, y){
+  overlap <- IRanges::findOverlapPairs(x, y, maxgap = 0L)
+  adjacent <- subset(overlap, IRanges::start(first) == IRanges::end(second) + 1L | 
+                       IRanges::end(first) == IRanges::start(second) - 1L)
+  
+  pair_df <- as.data.frame(adjacent) %>% 
+    dplyr::mutate(exonCoord = paste0(first.X.seqnames, "_", first.X.start, ":", first.X.end)) %>% 
+    dplyr::mutate(intronCoord = paste0(second.seqnames, "_", second.start, ":", second.end)) %>% 
+    dplyr::mutate(position = ifelse(first.X.start == second.end + 1, "Upstream", "Downstream")) %>% 
+    dplyr::select(exonCoord, intronCoord, position)
+  
+  disjoint_df <- as.data.frame(x) %>% 
+    dplyr::mutate(exonCoord = paste0(seqnames, "_", start, ":", end)) %>% 
+    dplyr::select(exonCoord)
+  
+  merge <- dplyr::full_join(x = disjoint_df, y = pair_df, "exonCoord")
+  
+  return(merge)
+}        
     
 }
