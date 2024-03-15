@@ -20,10 +20,10 @@ detection <- function(gtf){
     transcripts_filtered <- transcripts[transcripts$transcript_id %in% names(multi_transcripts)]
     gene_ids <- table(GenomicRanges::mcols(transcripts_filtered)$gene_id)
     multi_exonic_genes <- names(gene_ids[gene_ids > 1])
-    gtf_filtered <- gtf[gtf$gene_id %in% multi_exonic_genes]
+    gtf <- gtf[gtf$gene_id %in% multi_exonic_genes]
     
     # get only exon entries from prefiltered GTF
-    exons <- gtf_filtered[gtf_filtered$type == "exon"]
+    exons <- gtf[gtf$type == "exon"]
     
     # Create a GenomicRanges object of all non-redundant introns
     exonsbytx <- S4Vectors::split(exons, ~transcript_id)
