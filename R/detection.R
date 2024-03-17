@@ -20,11 +20,12 @@ detection <- function(gtf){
     multi_exonic_genes <- names(gene_ids[gene_ids > 1])
     gtf <- gtf[gtf$gene_id %in% multi_exonic_genes]
     
-    # trim ends of transcripts to avoid TS and TE
-    
     
     # get only exon entries from prefiltered GTF
     exons <- gtf[gtf$type == "exon"]
+    
+    # trim ends of transcripts to avoid TS and TE
+    exons <- .trim_ends_by_gene(exons)
     
     # Create a GenomicRanges object of all non-redundant introns
     exonsbytx <- S4Vectors::split(exons, ~transcript_id)
