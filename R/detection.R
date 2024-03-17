@@ -22,6 +22,9 @@ detection <- function(gtf){
     multi_exonic_genes <- names(gene_ids[gene_ids > 1])
     gtf <- gtf[gtf$gene_id %in% multi_exonic_genes]
     
+    # trim ends of transcripts to avoid TS and TE
+    
+    
     # get only exon entries from prefiltered GTF
     exons <- gtf[gtf$type == "exon"]
     
@@ -53,7 +56,26 @@ detection <- function(gtf){
 }
 
 
-
+.trim_ends_by_gene(x){
+  # trim-off TS and TE
+  x <- x %>%
+    as.data.frame() %>%
+    dplyr::group_by(transcript_id) %>%
+    dplyr::arrange(start) %>%
+    dplyr::mutate(pos = dplyr::row_number()) %>%
+    dplyr::mutate(pos = dplyr::case_when(pos == 1 ~ "First",
+                                         pos == dplyr::n() ~ "Last",
+                                         .default = "a.internal")) %%
+    dplyr::group_by(seqnames, end, gene_id) %>%
+    dplyr::arrange(pos, dplyr::desc(start)) %>%
+    dplyr::mutate(start = ifelse(pos == "First", start[1], start)) %>%
+    dplyr::group_by(seqnames, start, gene_id) %>%
+    dplyr::arrange(dplyr::desc(pos), dplyr::desc(end)) %>%
+    dplyr::mutate(end = ifelse(pos == "Last", end[dplyr::n()], end)) %>%
+    GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = T)
+  
+  return(x)
+}
 
 .disjoin_by_gene <- function(x){
     y <- GenomicRanges::disjoin(S4Vectors::split(x, ~gene_id))
