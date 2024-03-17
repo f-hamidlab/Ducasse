@@ -47,6 +47,10 @@ detection <- function(gtf){
     
     # TODO:  Pair up all exons with "skipping" introns
     
+    # TODO: Get junctions for Retained introns
+    
+    # TODO: Classify events
+    
     # TODO:  Output
     ## 1) metadata of all exons, 2) adjacency matrix of exons and flanking introns
     ## 3) adjacency matrix of exons and skipped introns
