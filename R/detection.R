@@ -55,25 +55,27 @@ detection <- function(gtf){
 }
 
 
-.trim_ends_by_gene(x){
+.trim_ends_by_gene <- function(x){
   # trim-off TS and TE
-  x <- x %>%
+  x %>%
     as.data.frame() %>%
     dplyr::group_by(transcript_id) %>%
     dplyr::arrange(start) %>%
     dplyr::mutate(pos = dplyr::row_number()) %>%
     dplyr::mutate(pos = dplyr::case_when(pos == 1 ~ "First",
                                          pos == dplyr::n() ~ "Last",
-                                         .default = "a.internal")) %%
+                                         .default = "a.internal")) %>%
     dplyr::group_by(seqnames, end, gene_id) %>%
     dplyr::arrange(pos, dplyr::desc(start)) %>%
     dplyr::mutate(start = ifelse(pos == "First", start[1], start)) %>%
     dplyr::group_by(seqnames, start, gene_id) %>%
     dplyr::arrange(dplyr::desc(pos), dplyr::desc(end)) %>%
     dplyr::mutate(end = ifelse(pos == "Last", end[dplyr::n()], end)) %>%
+    dplyr::ungroup() %>%
+    dplyr::select(-pos) %>%
+    dplyr::arrange(seqnames, gene_id, transcript_id, start) %>%
     GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = T)
   
-  return(x)
 }
 
 .disjoin_by_gene <- function(x){
