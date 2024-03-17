@@ -10,11 +10,9 @@ detection <- function(gtf){
     # TODO: Check inputs
     ## Can be path to gtf file or a GenomicRanges object
     
-    # get only exon entries from GTF
-    exons <- gtf[gtf$type == "exon"]
-    
+  
     # TODO: Prefilter for genes with at least 2 multi-exonic transcripts
-    transcript_counts <- table(GenomicRanges::mcols(exons)$transcript_id)
+    transcript_counts <- table(GenomicRanges::mcols(gtf)$transcript_id)
     transcripts <- gtf[gtf$type == "transcript"]
     multi_transcripts <- transcript_counts[transcript_counts > 2]
     transcripts_filtered <- transcripts[transcripts$transcript_id %in% names(multi_transcripts)]
