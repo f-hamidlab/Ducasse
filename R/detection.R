@@ -44,6 +44,8 @@ detection <- function(gtf){
     exon.intron.pairs <- .pair_by_exon_intron(disjoint.exons, introns.nr)
     
     # TODO:  Pair up all exons with "skipping" introns
+    #Find exons that are within intron coordinates
+    skipped.exons <- .find_skipped_exons(exon.intron.pairs, introns.nr)
     
     # TODO:  Output
     ## 1) metadata of all exons, 2) adjacency matrix of exons and flanking introns
@@ -100,5 +102,15 @@ detection <- function(gtf){
   
   return(adjacent)
 }        
-    
+   
+.find_skipped_exons <- function(x, y){
+  skipped_exons <- IRanges::findOverlapPairs(x, y, type = "within")
+  se_df <- as.data.frame(skipped_exons) %>% 
+    dplyr::mutate(exon = paste0(first.first.X.seqnames, "_", first.first.X.start, ":", first.first.X.end),
+           flankingIntron = paste0(first.second.seqnames,"_",first.second.start,":",first.second.end),
+           exonInIntron = paste0(second.seqnames,"_",second.start,":",second.end)) %>% 
+    dplyr::select(exon, exonInIntron, flankingIntron, position = first.position, strand = first.first.X.strand)
+  
+  return(se_df)
+} 
 }
