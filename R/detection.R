@@ -124,6 +124,7 @@ detection <- function(gtf){
     y$order <- NULL
     
     return(y)
+}
 
 .pair_by_exon_intron <- function(x, y){
     x$index <- 1:length(x)
@@ -156,4 +157,13 @@ detection <- function(gtf){
   
   return(se_df)
 } 
-}
+
+
+
+
+
+
+
+
+
+
