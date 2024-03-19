@@ -71,7 +71,7 @@ detection <- function(gtf){
     
     
     # TODO: Classify events
-    
+    exon.classified <- .event_classification(exon.events)
     # TODO:  Output
     ## 1) metadata of all exons, 2) adjacency matrix of exons and flanking introns
     ## 3) adjacency matrix of exons and skipped introns
@@ -205,6 +205,14 @@ detection <- function(gtf){
   appended <- rbind(z, ri_df)
   
   return(appended)
+}
+
+.event_classification <- function(x){
+  x$type <- with(x, ifelse(is.na(type) & position == "Upstream", "ALT3",
+                           ifelse(is.na(type) & position == "Downstream", "ALT5",
+                                  ifelse(is.na(type) & position == "Skipped", "SE", "RI"))))
+  
+  return(x)
 }
 
 }
