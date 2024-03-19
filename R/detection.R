@@ -9,12 +9,26 @@ detection <- function(gtf){
     
     # TODO: Check inputs
     ## Can be path to gtf file or a GenomicRanges object
-    
-    # get only exon entries from GTF
-    exons <- gtf[gtf$type == "exon"]
-    
+    if(class(gtf) %in% "character"){
+      if(file.exists(gtf)){
+        gtf <- rtracklayer::import(gtf)
+      } else {
+        rlang::abort("GTF file does not exist")
+      }
+    }
+  
+    # check GTF structure
+    if(!is_gtf(gtf)){
+      rlang::abort("Input is not a GTF file structure")
+    } else{
+      # check if gene_name column is present and if not, use "gene_id" column
+      if(!"gene_name" %in% colnames(S4Vectors::mcols(gtf))){
+        gtf$gene_name <- gtf$gene_id
+      }
+    }
+  
     # TODO: Prefilter for genes with at least 2 multi-exonic transcripts
-    transcript_counts <- table(GenomicRanges::mcols(exons)$transcript_id)
+    transcript_counts <- table(GenomicRanges::mcols(gtf)$transcript_id)
     transcripts <- gtf[gtf$type == "transcript"]
     multi_transcripts <- transcript_counts[transcript_counts > 2]
     transcripts_filtered <- transcripts[transcripts$transcript_id %in% names(multi_transcripts)]
@@ -22,8 +36,12 @@ detection <- function(gtf){
     multi_exonic_genes <- names(gene_ids[gene_ids > 1])
     gtf <- gtf[gtf$gene_id %in% multi_exonic_genes]
     
+    
     # get only exon entries from prefiltered GTF
     exons <- gtf[gtf$type == "exon"]
+    
+    # trim ends of transcripts to avoid TS and TE
+    exons <- .trim_ends_by_gene(exons)
     
     # Create a GenomicRanges object of all non-redundant introns
     exonsbytx <- S4Vectors::split(exons, ~transcript_id)
@@ -47,6 +65,10 @@ detection <- function(gtf){
     #Find exons that are within intron coordinates
     skipped.exons <- .find_skipped_exons(exon.intron.pairs, introns.nr)
     
+    # TODO: Get junctions for Retained introns
+    
+    # TODO: Classify events
+    
     # TODO:  Output
     ## 1) metadata of all exons, 2) adjacency matrix of exons and flanking introns
     ## 3) adjacency matrix of exons and skipped introns
@@ -55,7 +77,28 @@ detection <- function(gtf){
 }
 
 
-
+.trim_ends_by_gene <- function(x){
+  # trim-off TS and TE
+  x %>%
+    as.data.frame() %>%
+    dplyr::group_by(transcript_id) %>%
+    dplyr::arrange(start) %>%
+    dplyr::mutate(pos = dplyr::row_number()) %>%
+    dplyr::mutate(pos = dplyr::case_when(pos == 1 ~ "First",
+                                         pos == dplyr::n() ~ "Last",
+                                         .default = "a.internal")) %>%
+    dplyr::group_by(seqnames, end, gene_id) %>%
+    dplyr::arrange(pos, dplyr::desc(start)) %>%
+    dplyr::mutate(start = ifelse(pos == "First", start[1], start)) %>%
+    dplyr::group_by(seqnames, start, gene_id) %>%
+    dplyr::arrange(dplyr::desc(pos), dplyr::desc(end)) %>%
+    dplyr::mutate(end = ifelse(pos == "Last", end[dplyr::n()], end)) %>%
+    dplyr::ungroup() %>%
+    dplyr::select(-pos) %>%
+    dplyr::arrange(seqnames, gene_id, transcript_id, start) %>%
+    GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = T)
+  
+}
 
 .disjoin_by_gene <- function(x){
     y <- GenomicRanges::disjoin(S4Vectors::split(x, ~gene_id))
