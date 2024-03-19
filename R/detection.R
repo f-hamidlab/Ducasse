@@ -63,15 +63,19 @@ detection <- function(gtf){
     
     # TODO:  Pair up all exons with "skipping" introns
     #Find exons that are within intron coordinates
-    skipped.exons <- .find_skipped_exons(exon.intron.pairs, introns.nr)
+    exon.junction <- .group_by_junction(exon.intron.pairs, introns.nr)
     
     # TODO: Get junctions for Retained introns
+    #append the retained introns into previous dataframe
+    exon.events <- .append_retained_intron(disjoint.exons, introns.nr, exon.junction)
+    
     
     # TODO: Classify events
     
     # TODO:  Output
     ## 1) metadata of all exons, 2) adjacency matrix of exons and flanking introns
     ## 3) adjacency matrix of exons and skipped introns
+    
     return()
     
 }
@@ -146,14 +150,61 @@ detection <- function(gtf){
   return(adjacent)
 }        
    
-.find_skipped_exons <- function(x, y){
-  skipped_exons <- IRanges::findOverlapPairs(x, y, type = "within")
-  se_df <- as.data.frame(skipped_exons) %>% 
+.group_by_junction <- function(x, y){
+  overlap <- IRanges::findOverlapPairs(x, y, type = "within")
+  overlap_df <- as.data.frame(overlap) %>% 
     dplyr::mutate(exon = paste0(first.first.X.seqnames, "_", first.first.X.start, ":", first.first.X.end),
            flankingIntron = paste0(first.second.seqnames,"_",first.second.start,":",first.second.end),
            exonInIntron = paste0(second.seqnames,"_",second.start,":",second.end)) %>% 
     dplyr::select(exon, exonInIntron, flankingIntron, position = first.position, strand = first.first.X.strand)
   
-  return(se_df)
+  skipped <- overlap_df %>% 
+    dplyr::group_by(exon, exonInIntron) %>% 
+    dplyr::filter(dplyr::n()>1) %>% 
+    dplyr::mutate(position = "Skipped") %>% 
+    dplyr::select(exon, spliceJunction = exonInIntron, position, strand) %>% 
+    dplyr::distinct()
+  
+  upstream_downstream <- overlap_df %>% 
+    dplyr::group_by(exon, exonInIntron) %>% 
+    dplyr::filter(dplyr::n() == 1) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::select(exon, spliceJunction = flankingIntron, position, strand)
+  
+  junction_grp <- rbind(skipped, upstream_downstream)
+  
+  return(junction_grp)
 } 
+
+.append_retained_intron <- function(x, y, z){
+  retained_intron <- IRanges::findOverlapPairs(x, y, type = "equal")
+  
+  ri_skipped <- as.data.frame(retained_intron) %>% 
+    dplyr::mutate(exon = paste0(first.X.seqnames, "_", first.X.start, ":", first.X.end),
+                  spliceJunction = paste0(second.seqnames,"_",second.start,":",second.end),
+                  position = "Skipped",
+                  type = "RI") %>% 
+    dplyr::select(exon, spliceJunction, position, strand = first.X.strand, type)
+  
+  ri_upstream <- as.data.frame(retained_intron) %>% 
+    dplyr::mutate(exon = paste0(first.X.seqnames, "_", first.X.start, ":", first.X.end),
+                  spliceJunction = paste0(second.seqnames,"_",second.start-2,":",second.start-1),
+                  position = "Upstream",
+                  type = "RI") %>% 
+    dplyr::select(exon, spliceJunction, position, strand = first.X.strand, type)
+  
+  ri_downstream <- as.data.frame(retained_intron) %>% 
+    dplyr::mutate(exon = paste0(first.X.seqnames, "_", first.X.start, ":", first.X.end),
+                  spliceJunction = paste0(second.seqnames,"_",second.end+1,":",second.end+2),
+                  position = "Downstream",
+                  type = "RI") %>% 
+    dplyr::select(exon, spliceJunction, position, strand = first.X.strand, type)
+  
+  ri_df <- rbind(ri_skipped,ri_upstream,ri_downstream)
+  
+  appended <- rbind(z, ri_df)
+  
+  return(appended)
+}
+
 }
