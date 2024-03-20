@@ -41,7 +41,12 @@ detection <- function(gtf){
     exons <- gtf[gtf$type == "exon"]
     
     # trim ends of transcripts to avoid TS and TE
-    exons <- .trim_ends_by_gene(exons)
+    exons <- .trim_ends_by_gene(exons) 
+      
+    exons_cols <- .generate_exon_class(exons)
+    
+    GenomicRanges::mcols(exons) <- exons_cols
+      
     
     # Create a GenomicRanges object of all non-redundant introns
     exonsbytx <- S4Vectors::split(exons, ~transcript_id)
@@ -66,12 +71,12 @@ detection <- function(gtf){
     exon.junction <- .group_by_junction(exon.intron.pairs, introns.nr)
     
     # TODO: Get junctions for Retained introns
-    #append the retained introns into previous dataframe
-    exon.events <- .append_retained_intron(disjoint.exons, introns.nr, exon.junction)
+    #generate dataframe of retained introns
+    retained.introns <- .find_retained_intron(disjoint.exons, introns.nr)
     
     
     # TODO: Classify events
-    exon.classified <- .event_classification(exon.events)
+    exon.classified <- .event_classification(exon.junction)
     # TODO:  Output
     ## 1) metadata of all exons, 2) adjacency matrix of exons and flanking introns
     ## 3) adjacency matrix of exons and skipped introns
@@ -104,12 +109,28 @@ detection <- function(gtf){
   
 }
 
+#group by transcript id and label first and last exons
+.generate_exon_class <- function(x){
+  y <- x %>% 
+    as.data.frame() %>% 
+    dplyr::group_by(transcript_id) %>% 
+    dplyr::mutate(exon_class = ifelse(start==min(start) & strand == "+", "first",
+                                      ifelse(end==max(end) & strand == "+", "last", 
+                                      ifelse(start==min(start) & strand == "-", "last",
+                                      ifelse(end==max(end) & strand == "-", "first", "internal"))))) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::select(gene_id,gene_name,type,transcript_id,exon_class)
+  
+  return(y)
+}
+
 .disjoin_by_gene <- function(x){
     y <- GenomicRanges::disjoin(S4Vectors::split(x, ~gene_id))
     y <- y %>% 
         as.data.frame() %>% 
         dplyr::mutate(gene_id = group_name) %>% 
-        dplyr::select(seqnames:gene_id) %>% 
+        dplyr::left_join(y = dplyr::distinct(as.data.frame(x), seqnames, start, end, strand, .keep_all = TRUE)) %>%
+        dplyr::select(seqnames:gene_id, exon_class) %>% 
         GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = TRUE)
     
     y$order <- 1:length(y)
@@ -139,7 +160,7 @@ detection <- function(gtf){
     dplyr::mutate(position = ifelse(first.X.start == second.end + 1, "Upstream", "Downstream")) %>% 
     dplyr::select(original.index=first.index,  position) %>% 
     dplyr::mutate(overlapped.index = dplyr::row_number())
-  GenomicRanges::mcols(adjacent) <- pair_df
+  GenomicRanges::mcols(adjacent)$position <- pair_df$position
   
   # disjoint_df <- as.data.frame(x) %>% 
   #   dplyr::mutate(exonCoord = paste0(seqnames, "_", start, ":", end)) %>% 
@@ -152,67 +173,70 @@ detection <- function(gtf){
    
 .group_by_junction <- function(x, y){
   overlap <- IRanges::findOverlapPairs(x, y, type = "within")
-  overlap_df <- as.data.frame(overlap) %>% 
+  
+  skipped <- as.data.frame(overlap) %>% 
     dplyr::mutate(exon = paste0(first.first.X.seqnames, "_", first.first.X.start, ":", first.first.X.end),
-           flankingIntron = paste0(first.second.seqnames,"_",first.second.start,":",first.second.end),
-           exonInIntron = paste0(second.seqnames,"_",second.start,":",second.end)) %>% 
-    dplyr::select(exon, exonInIntron, flankingIntron, position = first.position, strand = first.first.X.strand)
+                  spliceJunction = paste0(second.seqnames,"_",second.start,":",second.end),
+                  position = "Skipped",
+                  score = 1) %>% 
+    dplyr::distinct(exon,spliceJunction, .keep_all = TRUE) %>%  
+    dplyr::distinct(exon,position,.keep_all = TRUE) %>% #not sure if this is needed
+    dplyr::select(exon, position, strand = first.first.X.strand, score, exon_class=first.first.exon_class)
+
+
   
-  skipped <- overlap_df %>% 
-    dplyr::group_by(exon, exonInIntron) %>% 
-    dplyr::filter(dplyr::n()>1) %>% 
-    dplyr::mutate(position = "Skipped") %>% 
-    dplyr::select(exon, spliceJunction = exonInIntron, position, strand) %>% 
-    dplyr::distinct()
-  
-  upstream_downstream <- overlap_df %>% 
-    dplyr::group_by(exon, exonInIntron) %>% 
-    dplyr::filter(dplyr::n() == 1) %>% 
-    dplyr::ungroup() %>% 
-    dplyr::select(exon, spliceJunction = flankingIntron, position, strand)
+  upstream_downstream <- as.data.frame(overlap) %>% 
+    dplyr::mutate(exon = paste0(first.first.X.seqnames,"_", first.first.X.start,":", first.first.X.end),
+                  flankingIntron = paste0(first.second.seqnames,"_",first.second.start,":",first.second.end),
+                  score = 1) %>% 
+    dplyr::distinct(exon,flankingIntron, .keep_all = TRUE) %>% 
+    dplyr::distinct(exon,first.position,.keep_all = TRUE) %>% #unsure if this is needed
+    dplyr::select(exon,position=first.position,strand=first.first.X.strand,score, exon_class=first.first.exon_class)
   
   junction_grp <- rbind(skipped, upstream_downstream)
   
   return(junction_grp)
 } 
 
-.append_retained_intron <- function(x, y, z){
+.find_retained_intron <- function(x, y){
   retained_intron <- IRanges::findOverlapPairs(x, y, type = "equal")
   
   ri_skipped <- as.data.frame(retained_intron) %>% 
     dplyr::mutate(exon = paste0(first.X.seqnames, "_", first.X.start, ":", first.X.end),
                   spliceJunction = paste0(second.seqnames,"_",second.start,":",second.end),
                   position = "Skipped",
-                  type = "RI") %>% 
-    dplyr::select(exon, spliceJunction, position, strand = first.X.strand, type)
+                  score = 1) %>% 
+    dplyr::select(exon, position, strand = first.X.strand, score)
   
   ri_upstream <- as.data.frame(retained_intron) %>% 
     dplyr::mutate(exon = paste0(first.X.seqnames, "_", first.X.start, ":", first.X.end),
                   spliceJunction = paste0(second.seqnames,"_",second.start-2,":",second.start-1),
                   position = "Upstream",
-                  type = "RI") %>% 
-    dplyr::select(exon, spliceJunction, position, strand = first.X.strand, type)
+                  score = 1) %>% 
+    dplyr::select(exon, position, strand = first.X.strand, score)
   
   ri_downstream <- as.data.frame(retained_intron) %>% 
     dplyr::mutate(exon = paste0(first.X.seqnames, "_", first.X.start, ":", first.X.end),
                   spliceJunction = paste0(second.seqnames,"_",second.end+1,":",second.end+2),
                   position = "Downstream",
-                  type = "RI") %>% 
-    dplyr::select(exon, spliceJunction, position, strand = first.X.strand, type)
+                  score = 1) %>% 
+    dplyr::select(exon, position, strand = first.X.strand, score)
   
   ri_df <- rbind(ri_skipped,ri_upstream,ri_downstream)
   
-  appended <- rbind(z, ri_df)
-  
-  return(appended)
+  return(ri_df)
 }
 
-.event_classification <- function(x){
-  x$type <- with(x, ifelse(is.na(type) & position == "Upstream", "ALT3",
-                           ifelse(is.na(type) & position == "Downstream", "ALT5",
-                                  ifelse(is.na(type) & position == "Skipped", "SE", "RI"))))
+.event_classification <- function(x,y){
+  pivot <- tidyr::pivot_wider(x, names_from = position, values_from = score, values_fill = 0)
   
-  return(x)
+  classified <- pivot %>% 
+    dplyr::mutate(splice_type = ifelse(exon_class=="first", "AF", 
+                         ifelse(exon_class=="last", "AL",
+                         ifelse(Skipped==1 & Downstream==1 & Upstream==1, "CE",
+                         ifelse(strand=="+" & Skipped==1 & Downstream==1, "AD", "AA")))))
+  
+  return()
 }
 
 }
