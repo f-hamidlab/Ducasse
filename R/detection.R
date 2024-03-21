@@ -125,17 +125,23 @@ findASevents <- function(gtf){
 }
 
 .disjoin_by_gene <- function(x){
+    # actual disjoin function
     y <- GenomicRanges::disjoin(S4Vectors::split(x, ~gene_id))
+    
+    # create gene_id metacolumn
     y <- y %>% 
         as.data.frame() %>% 
         dplyr::mutate(gene_id = group_name) %>% 
         dplyr::select(seqnames:gene_id) %>% 
         GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = TRUE)
     
+    # link up disjointed exons to original exons
     y$order <- 1:length(y)
     out <- IRanges::findOverlapPairs(y, x, type="within")
     out <- out[S4Vectors::first(out)$gene_id == S4Vectors::second(out)$gene_id ]
     
+    # clean output by labeling exon positions, nesting transcript ids and
+    # get gene name
     out <- out %>% 
         as.data.frame() %>% 
         dplyr::select(order = first.order, 
@@ -156,6 +162,7 @@ findASevents <- function(gtf){
     return(y)
 }
 
+# wrapper function to run subfunctions to get spliced junc and skipped junc
 .get_juncs <- function(x, y){
   exon.spljunc <- .get_spljunc(x,y)
   out <- .add_skipjunc(exon.spljunc, y)
@@ -165,12 +172,13 @@ findASevents <- function(gtf){
 
 
 .get_spljunc <- function(x, y){
-    x$index <- 1:length(x)
+  # get adjacent introns for each disjointed exon
   overlap <- IRanges::findOverlapPairs(x, y, maxgap = 0L)
   adjacent <- subset(overlap, 
                      IRanges::start(first) == IRanges::end(second) + 1L | 
                      IRanges::end(first) == IRanges::start(second) - 1L)
   
+  # label type of junction
   pair_df <- as.data.frame(adjacent) %>% 
     dplyr::mutate(position = ifelse(first.X.start == second.end + 1, "Upstream", "Downstream")) 
   GenomicRanges::mcols(adjacent)$position <- pair_df$position
@@ -179,11 +187,14 @@ findASevents <- function(gtf){
 }        
    
 .add_skipjunc <- function(x, y){
+  # get introns that are covering entire exon
   overlap <- IRanges::findOverlapPairs(x, y, type = "within")
   
+  # extract pairs object
   x.overlap <- S4Vectors::first(overlap)
   y.overlap <- S4Vectors::second(overlap)
   
+  # get exons and its skipped junction pair
   exon.w.skipjunc <- as.data.frame(overlap) %>% 
     dplyr::mutate(exon_coord = .get_coord(S4Vectors::first(x.overlap)),
                   junc_coord = .get_coord(y.overlap),
@@ -196,10 +207,8 @@ findASevents <- function(gtf){
                   strand = first.first.X.strand, 
                   junc_type,
                   exon_pos=first.first.exon_pos)
-
-
   
-  
+  # get exons and its spliced junction pair
   exon.w.spljunc <- as.data.frame(overlap) %>% 
     dplyr::mutate(exon_coord = .get_coord(S4Vectors::first(x.overlap)),
                   junc_coord = .get_coord(S4Vectors::second(x.overlap))) %>% 
@@ -219,6 +228,7 @@ findASevents <- function(gtf){
 .find_retained_intron <- function(x, y){
   retained_intron <- IRanges::findOverlapPairs(x, y, type = "equal")
   
+  # get "skipped" junction of RI and prep output
   ri_skipped <- as.data.frame(retained_intron) %>% 
     dplyr::mutate(exon_coord = .get_coord(S4Vectors::first(retained_intron)), 
                   junc_coord = exon_coord,
@@ -231,11 +241,12 @@ findASevents <- function(gtf){
                   junc_type,
                   exon_pos=first.exon_pos)
   
+  # get first and last coord of RI
   ri_resized_up <- GenomicRanges::resize(S4Vectors::first(retained_intron), 1)
   ri_resized_dn <- GenomicRanges::resize(S4Vectors::first(retained_intron), 1, 
                                          fix = "end")
   
-  
+  # prepare output of "spliced" coordinates of RI
   ri_spliced <- as.data.frame(retained_intron) %>% 
     dplyr::mutate(exon_coord = .get_coord(S4Vectors::first(retained_intron)), 
                   Upstream = .get_coord(ri_resized_up),
@@ -257,6 +268,8 @@ findASevents <- function(gtf){
 }
 
 .classify_events <- function(x,y){
+  
+  # get distinct exon_coord and junc_type and pivot junc_type
   x.pivoted <- x %>%
     dplyr::select(-junc_coord) %>%
     dplyr::distinct() %>%
@@ -264,6 +277,8 @@ findASevents <- function(gtf){
     tidyr::pivot_wider(names_from = junc_type, values_from = score, 
                        values_fill = FALSE)
   
+  # classify events based on exon_pos and presence of Upstream and Downstream junc
+  # the last bit handles AD and AA events on the negative strand
   x.classified <- x.pivoted %>% 
     dplyr::mutate(AStype = dplyr::case_when(
       exon_pos=="first" ~ "AF",
