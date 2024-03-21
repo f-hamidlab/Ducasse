@@ -65,11 +65,11 @@ detection <- function(gtf){
     #   1. Exon coordinate
     #   2. Intron coordinate for each hit
     #   3. Position (Upstream or downstream)
-    exon.intron.pairs <- .pair_by_exon_intron(disjoint.exons, introns.nr)
+    exon.spljunc.pairs <- .get_spljunc(disjoint.exons, introns.nr)
     
     # TODO:  Pair up all exons with "skipping" introns
     #Find exons that are within intron coordinates
-    exon.junction <- .group_by_junction(exon.intron.pairs, introns.nr)
+    exon.junction <- .group_by_junction(exon.spljunc.pairs, introns.nr)
     
     # TODO: Get junctions for Retained introns
     #generate dataframe of retained introns
@@ -158,7 +158,7 @@ detection <- function(gtf){
     return(y)
 }
 
-.pair_by_exon_intron <- function(x, y){
+.get_spljunc <- function(x, y){
     x$index <- 1:length(x)
   overlap <- IRanges::findOverlapPairs(x, y, maxgap = 0L)
   adjacent <- subset(overlap, 
