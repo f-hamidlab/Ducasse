@@ -161,20 +161,13 @@ detection <- function(gtf){
 .pair_by_exon_intron <- function(x, y){
     x$index <- 1:length(x)
   overlap <- IRanges::findOverlapPairs(x, y, maxgap = 0L)
-  adjacent <- subset(overlap, IRanges::start(first) == IRanges::end(second) + 1L | 
-                       IRanges::end(first) == IRanges::start(second) - 1L)
+  adjacent <- subset(overlap, 
+                     IRanges::start(first) == IRanges::end(second) + 1L | 
+                     IRanges::end(first) == IRanges::start(second) - 1L)
   
   pair_df <- as.data.frame(adjacent) %>% 
-    dplyr::mutate(position = ifelse(first.X.start == second.end + 1, "Upstream", "Downstream")) %>% 
-    dplyr::select(original.index=first.index,  position) %>% 
-    dplyr::mutate(overlapped.index = dplyr::row_number())
+    dplyr::mutate(position = ifelse(first.X.start == second.end + 1, "Upstream", "Downstream")) 
   GenomicRanges::mcols(adjacent)$position <- pair_df$position
-  
-  # disjoint_df <- as.data.frame(x) %>% 
-  #   dplyr::mutate(exonCoord = paste0(seqnames, "_", start, ":", end)) %>% 
-  #   dplyr::select(exonCoord)
-  # 
-  # merge <- dplyr::full_join(x = disjoint_df, y = pair_df, "exonCoord")
   
   return(adjacent)
 }        
