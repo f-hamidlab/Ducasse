@@ -7,87 +7,80 @@
 #TODO: Need a better name for this function
 findASevents <- function(gtf){
     
-    # TODO: Check inputs
-    ## Can be path to gtf file or a GenomicRanges object
-  if(is_valid_file(gtf)){
-    gtf <- rtracklayer::import(gtf)
-  } else {
-    rlang::abort("GTF file does not exist")
+  ## Check for GenomicRanges object or a valid GTF file 
+  if(!class(gtf) %in% "GRanges"){
+    if(is_valid_file(gtf)){
+      gtf <- rtracklayer::import(gtf)
+    } else {
+      rlang::abort("GTF file does not exist")
+    }
   }
   
-  
-  
-    # check GTF structure
-    if(!is_gtf(gtf)){
-      rlang::abort("Input is not a GTF file structure")
-    } else{
-      # check if gene_name column is present and if not, use "gene_id" column
-      if(!"gene_name" %in% colnames(S4Vectors::mcols(gtf))){
-        gtf$gene_name <- gtf$gene_id
-      }
+  ## Check for proper GTF structure
+  if(!is_gtf(gtf)){
+    rlang::abort("Input is not a GTF file structure")
+  } else{
+    # check if gene_name column is present and if not, use "gene_id" column
+    if(!"gene_name" %in% colnames(S4Vectors::mcols(gtf))){
+      gtf$gene_name <- gtf$gene_id
     }
+  }
   
-    # TODO: Prefilter for genes with at least 2 multi-exonic transcripts
-    filtered_genes <- gtf %>%
-      as.data.frame() %>%
-      dplyr::filter(type=="exon") %>%
-      dplyr::group_by(gene_id, transcript_id) %>%
-      dplyr::tally() %>%
-      dplyr::filter(n > 2) %>%
-      dplyr::group_by(gene_id) %>%
-      dplyr::tally() %>%
-      dplyr::filter(n > 1)
-    gtf <- gtf[gtf$gene_id %in% filtered_genes$gene_id]
+  ## Prefilter for genes with at least 2 multiexonic transcripts
+  filtered_genes <- gtf %>%
+    as.data.frame() %>%
+    dplyr::filter(type=="exon") %>%
+    dplyr::group_by(gene_id, transcript_id) %>%
+    dplyr::tally() %>%
+    dplyr::filter(n > 2) %>%
+    dplyr::group_by(gene_id) %>%
+    dplyr::tally() %>%
+    dplyr::filter(n > 1)
+  gtf <- gtf[gtf$gene_id %in% filtered_genes$gene_id]
     
     
-    # get only exon entries from prefiltered GTF
-    exons <- gtf[gtf$type == "exon"]
+  ## Get only exon entries from prefiltered GTF
+  exons <- gtf[gtf$type == "exon"]
+  
+  ## Trim ends of transcripts to avoid TS and TE
+  exons <- .trim_ends_by_gene(exons) 
+  
+  ## Classify exons by position (First, Internal, Last)
+  exons <- .label_exon_class(exons)
     
-    # trim ends of transcripts to avoid TS and TE
-    exons <- .trim_ends_by_gene(exons) 
+  ## Create a GenomicRanges object of all non-redundant introns
+  exonsbytx <- S4Vectors::split(exons, ~transcript_id)
+  intronsbytx <- GenomicRanges::psetdiff(BiocGenerics::unlist(range(exonsbytx)), exonsbytx)
+  introns.nr <- unique(unlist(intronsbytx))
+  names(introns.nr) <- NULL
+  
+  ## Create a disjointed version of all exons in each gene family
+  disjoint.exons <- .disjoin_by_gene(exons)
+  
     
-    # classify exons by position (First, Internal, Last)
-    exons <- .label_exon_class(exons)
-    
-    # Create a GenomicRanges object of all non-redundant introns
-    exonsbytx <- S4Vectors::split(exons, ~transcript_id)
-    intronsbytx <- GenomicRanges::psetdiff(BiocGenerics::unlist(range(exonsbytx)), exonsbytx)
-    introns.nr <- unique(unlist(intronsbytx))
-    names(introns.nr) <- NULL
-    
-    # Create a disjointed version of all exons in each gene family
-    disjoint.exons <- .disjoin_by_gene(exons)
-
-    
-    # TODO:  Pair up all exons from disjoint.exons with flanking introns
-    ## GenomicRanges::findOverlaps
-    ## Output a df with these columns:
-    #   1. Exon coordinate
-    #   2. Intron coordinate for each hit
-    #   3. Position (Upstream or downstream)
-    exon.juncs <- .get_juncs(disjoint.exons, introns.nr)
-    
-    
-    # TODO: Get junctions for Retained introns
-    #generate dataframe of retained introns
-    retained.introns <- .find_retained_intron(disjoint.exons, introns.nr)
-    
-    
-    # TODO: Classify events
-    exon.juncs <- .classify_events(exon.juncs)
-    full.exon.juncs <- rbind(exon.juncs, retained.introns)
-    full.exon.juncs$exon_pos <- NULL
-    
-    
-    # TODO:  Output a list object containing:
-    ## 1) metadata of all exons
-    ### This should include:
-    ### - exon coordinates, gene_id, gene_name, strand, transcript_ids, AStype
-    ## 2) exon-junction pairs
-    ### This should include:
-    ### - exon coordinates, junction coordinates, junction type
-    
-    return()
+  ## Pair up all disjointed exons with spliced and skipped intron junctions
+  exon.juncs <- .get_juncs(disjoint.exons, introns.nr)
+  
+  
+  ## Get junctions for Retained introns specifically
+  retained.introns <- .find_retained_intron(disjoint.exons, introns.nr)
+  
+  
+  ## Classify non-RI events and merge 
+  exon.juncs <- .classify_events(exon.juncs)
+  full.exon.juncs <- rbind(exon.juncs, retained.introns)
+  full.exon.juncs$exon_pos <- NULL
+  
+  
+  # TODO:  Output a list object containing:
+  ## 1) metadata of all exons
+  ### This should include:
+  ### - exon coordinates, gene_id, gene_name, strand, transcript_ids, AStype
+  ## 2) exon-junction pairs
+  ### This should include:
+  ### - exon coordinates, junction coordinates, junction type
+  
+  return()
     
 }
 
