@@ -65,11 +65,8 @@ detection <- function(gtf){
     #   1. Exon coordinate
     #   2. Intron coordinate for each hit
     #   3. Position (Upstream or downstream)
-    exon.spljunc.pairs <- .get_spljunc(disjoint.exons, introns.nr)
+    exon.juncs <- .get_juncs(disjoint.exons, introns.nr)
     
-    # TODO:  Pair up all exons with "skipping" introns
-    #Find exons that are within intron coordinates
-    exon.junction <- .group_by_junction(exon.spljunc.pairs, introns.nr)
     
     # TODO: Get junctions for Retained introns
     #generate dataframe of retained introns
@@ -158,6 +155,14 @@ detection <- function(gtf){
     return(y)
 }
 
+.get_juncs <- function(x, y){
+  exon.spljunc <- .get_spljunc(x,y)
+  out <- .add_skipjunc(exon.spljunc, y)
+  
+  return(out)
+}
+
+
 .get_spljunc <- function(x, y){
     x$index <- 1:length(x)
   overlap <- IRanges::findOverlapPairs(x, y, maxgap = 0L)
@@ -172,31 +177,35 @@ detection <- function(gtf){
   return(adjacent)
 }        
    
-.group_by_junction <- function(x, y){
+.add_skipjunc <- function(x, y){
   overlap <- IRanges::findOverlapPairs(x, y, type = "within")
   
-  skipped <- as.data.frame(overlap) %>% 
-    dplyr::mutate(exon = paste0(first.first.X.seqnames, "_", first.first.X.start, ":", first.first.X.end),
-                  spliceJunction = paste0(second.seqnames,"_",second.start,":",second.end),
-                  position = "Skipped",
-                  score = 1) %>% 
-    dplyr::distinct(exon,spliceJunction, .keep_all = TRUE) %>%  
-    dplyr::distinct(exon,position,.keep_all = TRUE) %>% #not sure if this is needed
-    dplyr::select(exon, position, strand = first.first.X.strand, score, exon_class=first.first.exon_class)
+  x.overlap <- S4Vectors::first(overlap)
+  y.overlap <- S4Vectors::second(overlap)
+  
+  exon.w.skipjunc <- as.data.frame(overlap) %>% 
+    dplyr::mutate(exon_coord = .get_coord(S4Vectors::first(x.overlap)),
+                  junc_coord = .get_coord(y.overlap),
+                  position = "Skipped") %>% 
+    dplyr::distinct(exon_coord,junc_coord, .keep_all = TRUE) %>%  
+    dplyr::select(exon_coord, junc_coord, 
+                  position, strand = first.first.X.strand, 
+                  exon_pos=first.first.exon_pos)
 
 
   
-  upstream_downstream <- as.data.frame(overlap) %>% 
-    dplyr::mutate(exon = paste0(first.first.X.seqnames,"_", first.first.X.start,":", first.first.X.end),
-                  flankingIntron = paste0(first.second.seqnames,"_",first.second.start,":",first.second.end),
-                  score = 1) %>% 
-    dplyr::distinct(exon,flankingIntron, .keep_all = TRUE) %>% 
-    dplyr::distinct(exon,first.position,.keep_all = TRUE) %>% #unsure if this is needed
-    dplyr::select(exon,position=first.position,strand=first.first.X.strand,score, exon_class=first.first.exon_class)
   
-  junction_grp <- rbind(skipped, upstream_downstream)
+  exon.w.spljunc <- as.data.frame(overlap) %>% 
+    dplyr::mutate(exon_coord = .get_coord(S4Vectors::first(x.overlap)),
+                  junc_coord = .get_coord(S4Vectors::second(x.overlap))) %>% 
+    dplyr::distinct(exon_coord,junc_coord, .keep_all = TRUE) %>% 
+    dplyr::select(exon_coord,junc_coord, 
+                  position=first.position,
+                  strand=first.first.X.strand,
+                  exon_pos=first.first.exon_pos)
   
-  return(junction_grp)
+  return(rbind(exon.w.spljunc, exon.w.skipjunc))
+ 
 } 
 
 .find_retained_intron <- function(x, y){
