@@ -9,13 +9,13 @@ detection <- function(gtf){
     
     # TODO: Check inputs
     ## Can be path to gtf file or a GenomicRanges object
-    if(class(gtf) %in% "character"){
-      if(file.exists(gtf)){
-        gtf <- rtracklayer::import(gtf)
-      } else {
-        rlang::abort("GTF file does not exist")
-      }
-    }
+  if(is_valid_file(gtf)){
+    gtf <- rtracklayer::import(gtf)
+  } else {
+    rlang::abort("GTF file does not exist")
+  }
+  
+  
   
     # check GTF structure
     if(!is_gtf(gtf)){
