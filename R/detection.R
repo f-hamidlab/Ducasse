@@ -219,27 +219,38 @@ detection <- function(gtf){
   retained_intron <- IRanges::findOverlapPairs(x, y, type = "equal")
   
   ri_skipped <- as.data.frame(retained_intron) %>% 
-    dplyr::mutate(exon = paste0(first.X.seqnames, "_", first.X.start, ":", first.X.end),
-                  spliceJunction = paste0(second.seqnames,"_",second.start,":",second.end),
-                  position = "Skipped",
-                  score = 1) %>% 
-    dplyr::select(exon, position, strand = first.X.strand, score)
+    dplyr::mutate(exon_coord = .get_coord(S4Vectors::first(retained_intron)), 
+                  junc_coord = exon_coord,
+                  junc_type = "Skipped") %>% 
+    dplyr::select(exon_coord,junc_coord, 
+                  gene_id = first.gene_id,
+                  gene_name = first.gene_name,
+                  transcript_ids = first.transcript_ids,
+                  strand=first.X.strand,
+                  junc_type,
+                  exon_pos=first.exon_pos)
   
-  ri_upstream <- as.data.frame(retained_intron) %>% 
-    dplyr::mutate(exon = paste0(first.X.seqnames, "_", first.X.start, ":", first.X.end),
-                  spliceJunction = paste0(second.seqnames,"_",second.start-2,":",second.start-1),
-                  position = "Upstream",
-                  score = 1) %>% 
-    dplyr::select(exon, position, strand = first.X.strand, score)
+  ri_resized_up <- GenomicRanges::resize(S4Vectors::first(retained_intron), 1)
+  ri_resized_dn <- GenomicRanges::resize(S4Vectors::first(retained_intron), 1, 
+                                         fix = "end")
   
-  ri_downstream <- as.data.frame(retained_intron) %>% 
-    dplyr::mutate(exon = paste0(first.X.seqnames, "_", first.X.start, ":", first.X.end),
-                  spliceJunction = paste0(second.seqnames,"_",second.end+1,":",second.end+2),
-                  position = "Downstream",
-                  score = 1) %>% 
-    dplyr::select(exon, position, strand = first.X.strand, score)
   
-  ri_df <- rbind(ri_skipped,ri_upstream,ri_downstream)
+  ri_spliced <- as.data.frame(retained_intron) %>% 
+    dplyr::mutate(exon_coord = .get_coord(S4Vectors::first(retained_intron)), 
+                  Upstream = .get_coord(ri_resized_up),
+                  Downstream = .get_coord(ri_resized_dn)) %>% 
+    dplyr::select(exon_coord,Upstream, Downstream,
+                  gene_id = first.gene_id,
+                  gene_name = first.gene_name,
+                  transcript_ids = first.transcript_ids,
+                  strand=first.X.strand,
+                  exon_pos=first.exon_pos) %>%
+    tidyr::pivot_longer(Upstream:Downstream, names_to = "junc_type", 
+                        values_to = "junc_coord")
+  
+  
+  ri_df <- rbind(ri_skipped,ri_spliced)
+  ri_df$type <- "RI"
   
   return(ri_df)
 }
