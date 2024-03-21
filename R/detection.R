@@ -28,13 +28,16 @@ detection <- function(gtf){
     }
   
     # TODO: Prefilter for genes with at least 2 multi-exonic transcripts
-    transcript_counts <- table(GenomicRanges::mcols(gtf)$transcript_id)
-    transcripts <- gtf[gtf$type == "transcript"]
-    multi_transcripts <- transcript_counts[transcript_counts > 2]
-    transcripts_filtered <- transcripts[transcripts$transcript_id %in% names(multi_transcripts)]
-    gene_ids <- table(GenomicRanges::mcols(transcripts_filtered)$gene_id)
-    multi_exonic_genes <- names(gene_ids[gene_ids > 1])
-    gtf <- gtf[gtf$gene_id %in% multi_exonic_genes]
+    filtered_genes <- gtf %>%
+      as.data.frame() %>%
+      dplyr::filter(type=="exon") %>%
+      dplyr::group_by(gene_id, transcript_id) %>%
+      dplyr::tally() %>%
+      dplyr::filter(n > 2) %>%
+      dplyr::group_by(gene_id) %>%
+      dplyr::tally() %>%
+      dplyr::filter(n > 1)
+    gtf <- gtf[gtf$gene_id %in% filtered_genes$gene_id]
     
     
     # get only exon entries from prefiltered GTF
