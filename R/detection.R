@@ -45,11 +45,9 @@ detection <- function(gtf){
     
     # trim ends of transcripts to avoid TS and TE
     exons <- .trim_ends_by_gene(exons) 
-      
-    exons_cols <- .generate_exon_class(exons)
     
-    GenomicRanges::mcols(exons) <- exons_cols
-      
+    # classify exons by position (First, Internal, Last)
+    exons <- .label_exon_class(exons)
     
     # Create a GenomicRanges object of all non-redundant introns
     exonsbytx <- S4Vectors::split(exons, ~transcript_id)
@@ -113,18 +111,19 @@ detection <- function(gtf){
 }
 
 #group by transcript id and label first and last exons
-.generate_exon_class <- function(x){
+.label_exon_class <- function(x){
   y <- x %>% 
     as.data.frame() %>% 
     dplyr::group_by(transcript_id) %>% 
-    dplyr::mutate(exon_class = ifelse(start==min(start) & strand == "+", "first",
-                                      ifelse(end==max(end) & strand == "+", "last", 
-                                      ifelse(start==min(start) & strand == "-", "last",
-                                      ifelse(end==max(end) & strand == "-", "first", "internal"))))) %>% 
-    dplyr::ungroup() %>% 
-    dplyr::select(gene_id,gene_name,type,transcript_id,exon_class)
-  
-  return(y)
+    dplyr::mutate(exon_pos = dplyr::case_when(
+      start==min(start) & strand == "+" ~ "first",
+      end==max(end) & strand == "+" ~ "last",
+      start==min(start) & strand == "-" ~ "last",
+      end==max(end) & strand == "-" ~ "first",
+      .default = "internal"
+    ))
+  x$exon_pos <- y$exon_pos
+  return(x)
 }
 
 .disjoin_by_gene <- function(x){
