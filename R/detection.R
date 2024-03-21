@@ -74,7 +74,11 @@ detection <- function(gtf){
     
     
     # TODO: Classify events
-    exon.classified <- .event_classification(exon.junction)
+    exon.juncs <- .classify_events(exon.juncs)
+    full.exon.juncs <- rbind(exon.juncs, retained.introns)
+    full.exon.juncs$exon_pos <- NULL
+    
+    
     # TODO:  Output
     ## 1) metadata of all exons, 2) adjacency matrix of exons and flanking introns
     ## 3) adjacency matrix of exons and skipped introns
@@ -250,21 +254,34 @@ detection <- function(gtf){
   
   
   ri_df <- rbind(ri_skipped,ri_spliced)
-  ri_df$type <- "RI"
+  ri_df$AStype <- "RI"
   
   return(ri_df)
 }
 
-.event_classification <- function(x,y){
-  pivot <- tidyr::pivot_wider(x, names_from = position, values_from = score, values_fill = 0)
+.classify_events <- function(x,y){
+  x.pivoted <- x %>%
+    dplyr::select(-junc_coord) %>%
+    dplyr::distinct() %>%
+    dplyr::mutate(score = TRUE) %>%
+    tidyr::pivot_wider(names_from = junc_type, values_from = score, 
+                       values_fill = FALSE)
   
-  classified <- pivot %>% 
-    dplyr::mutate(splice_type = ifelse(exon_class=="first", "AF", 
-                         ifelse(exon_class=="last", "AL",
-                         ifelse(Skipped==1 & Downstream==1 & Upstream==1, "CE",
-                         ifelse(strand=="+" & Skipped==1 & Downstream==1, "AD", "AA")))))
+  x.classified <- x.pivoted %>% 
+    dplyr::mutate(AStype = dplyr::case_when(
+      exon_pos=="first" ~ "AF",
+      exon_pos=="last" ~ "AL",
+      Skipped & Downstream & Upstream ~"CE",
+      Skipped & Downstream ~ "Ad",
+      Skipped & Upstream ~ "Aa"
+    )) %>%
+    dplyr::mutate(AStype = ifelse(strand == "-", chartr("ad", "da", AStype), AStype)) %>%
+    dplyr::mutate(AStype = toupper(AStype)) %>%
+    dplyr::select(exon_coord, gene_id, AStype)
   
-  return()
+  x %>%
+    dplyr::left_join(x.classified, by = c("exon_coord","gene_id"))
+
 }
 
 
