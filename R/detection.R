@@ -186,10 +186,14 @@ detection <- function(gtf){
   exon.w.skipjunc <- as.data.frame(overlap) %>% 
     dplyr::mutate(exon_coord = .get_coord(S4Vectors::first(x.overlap)),
                   junc_coord = .get_coord(y.overlap),
-                  position = "Skipped") %>% 
+                  junc_type = "Skipped") %>% 
     dplyr::distinct(exon_coord,junc_coord, .keep_all = TRUE) %>%  
     dplyr::select(exon_coord, junc_coord, 
-                  position, strand = first.first.X.strand, 
+                  gene_id = first.first.gene_id,
+                  gene_name = first.first.gene_name,
+                  transcript_ids = first.first.transcript_ids,
+                  strand = first.first.X.strand, 
+                  junc_type,
                   exon_pos=first.first.exon_pos)
 
 
@@ -200,8 +204,11 @@ detection <- function(gtf){
                   junc_coord = .get_coord(S4Vectors::second(x.overlap))) %>% 
     dplyr::distinct(exon_coord,junc_coord, .keep_all = TRUE) %>% 
     dplyr::select(exon_coord,junc_coord, 
-                  position=first.position,
+                  gene_id = first.first.gene_id,
+                  gene_name = first.first.gene_name,
+                  transcript_ids = first.first.transcript_ids,
                   strand=first.first.X.strand,
+                  junc_type=first.position,
                   exon_pos=first.first.exon_pos)
   
   return(rbind(exon.w.spljunc, exon.w.skipjunc))
