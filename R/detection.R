@@ -80,8 +80,12 @@ detection <- function(gtf){
     
     
     # TODO:  Output
-    ## 1) metadata of all exons, 2) adjacency matrix of exons and flanking introns
-    ## 3) adjacency matrix of exons and skipped introns
+    ## 1) metadata of all exons
+    ### This should include:
+    ### - exon coordinates, gene_id, gene_name, strand, transcript_ids, AStype
+    ## 2) exon-junction pairs
+    ### This should include:
+    ### - exon coordinates, junction coordinates, junction type
     
     return()
     
