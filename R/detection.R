@@ -5,7 +5,7 @@
 
 #' @importFrom dplyr %>%
 #TODO: Need a better name for this function
-detection <- function(gtf){
+findASevents <- function(gtf){
     
     # TODO: Check inputs
     ## Can be path to gtf file or a GenomicRanges object
@@ -79,7 +79,7 @@ detection <- function(gtf){
     full.exon.juncs$exon_pos <- NULL
     
     
-    # TODO:  Output
+    # TODO:  Output a list object containing:
     ## 1) metadata of all exons
     ### This should include:
     ### - exon coordinates, gene_id, gene_name, strand, transcript_ids, AStype
