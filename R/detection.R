@@ -131,8 +131,7 @@ detection <- function(gtf){
     y <- y %>% 
         as.data.frame() %>% 
         dplyr::mutate(gene_id = group_name) %>% 
-        dplyr::left_join(y = dplyr::distinct(as.data.frame(x), seqnames, start, end, strand, .keep_all = TRUE)) %>%
-        dplyr::select(seqnames:gene_id, exon_class) %>% 
+        dplyr::select(seqnames:gene_id) %>% 
         GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = TRUE)
     
     y$order <- 1:length(y)
@@ -141,16 +140,23 @@ detection <- function(gtf){
     
     out <- out %>% 
         as.data.frame() %>% 
-        dplyr::select(order = first.order, gene_name = second.gene_name, 
-                      transcript_id = second.transcript_id) %>% 
+        dplyr::select(order = first.order, 
+                      gene_name = second.gene_name, 
+                      transcript_id = second.transcript_id,
+                      exon_pos = second.exon_pos) %>% 
+        dplyr::mutate(exon_pos = factor(exon_pos, c("internal", "first","last"))) %>%
         dplyr::group_by(order) %>% 
+        dplyr::arrange(exon_pos) %>%
         dplyr::summarise(gene_name = gene_name[1], 
-                         transcript_id = paste0(transcript_id, collapse = ";"))
+                         transcript_id = paste0(transcript_id, collapse = ";"),
+                         exon_pos = exon_pos[1])
     y$gene_name <- out$gene_name
     y$transcript_ids <- out$transcript_id
+    y$exon_pos <- as.character(out$exon_pos)
     y$order <- NULL
     
     return(y)
+}
 
 .pair_by_exon_intron <- function(x, y){
     x$index <- 1:length(x)
@@ -241,4 +247,4 @@ detection <- function(gtf){
   return()
 }
 
-}
+
