@@ -80,7 +80,16 @@ findASevents <- function(gtf){
   ### This should include:
   ### - exon coordinates, junction coordinates, junction type
   
-  return()
+  exon.meta <- full.exon.juncs %>% 
+    dplyr::select(exon_coord, gene_id, gene_name, strand, transcript_ids, AStype)
+  
+  exon.junction.pairs <- full.exon.juncs %>% 
+    dplyr::select(exon_coord, junc_coord, junc_type)
+  
+  output <- list(exon.meta, exon.junction.pairs)
+  names(output) <- c("exon.meta", "exon.junction.pairs")
+  
+  return(output)
     
 }
 
