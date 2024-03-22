@@ -6,7 +6,7 @@
 #' @importFrom dplyr %>%
 #TODO: Need a better name for this function
 findASevents <- function(gtf){
-  message(format(Sys.time(), "%b %e %H:%M:%S"), " Reading GenomicRanges object or GTF file")
+  cli::cli_alert_info(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")), "Reading GenomicRanges object or GTF file"))
   ## Check for GenomicRanges object or a valid GTF file 
   if(!class(gtf) %in% "GRanges"){
     if(is_valid_file(gtf)){
@@ -28,7 +28,7 @@ findASevents <- function(gtf){
   
   ## Prefilter for genes with at least 2 multiexonic transcripts
   
-  message(format(Sys.time(), "%b %e %H:%M:%S")," Filtering genes")
+  cli::cli_alert_info(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")),"Filtering genes"))
   
   filtered_genes <- gtf %>%
     as.data.frame() %>%
@@ -43,6 +43,7 @@ findASevents <- function(gtf){
     
     
   ## Get only exon entries from prefiltered GTF
+  cli::cli_alert_info(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")),"Obtaining exons"))
   exons <- gtf[gtf$type == "exon"]
   
   ## Trim ends of transcripts to avoid TS and TE
@@ -52,28 +53,30 @@ findASevents <- function(gtf){
   exons <- .label_exon_class(exons)
     
   ## Create a GenomicRanges object of all non-redundant introns
+  cli::cli_alert_info(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")),"Creating GenomicRanges object of all non-redundant introns"))
   exonsbytx <- S4Vectors::split(exons, ~transcript_id)
   intronsbytx <- GenomicRanges::psetdiff(BiocGenerics::unlist(range(exonsbytx)), exonsbytx)
   introns.nr <- unique(unlist(intronsbytx))
   names(introns.nr) <- NULL
   
   ## Create a disjointed version of all exons in each gene family
+  cli::cli_alert_info(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")),"Creating disjointed version of all exons in each gene family"))
   disjoint.exons <- .disjoin_by_gene(exons)
   
     
   ## Pair up all disjointed exons with spliced and skipped intron junctions
   
-  message(format(Sys.time(), "%b %e %H:%M:%S")," Obtaining exon and intron junction pairs")
+  cli::cli_alert_info(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")),"Obtaining exon and intron junction pairs"))
   exon.juncs <- .get_juncs(disjoint.exons, introns.nr)
   
   
   ## Get junctions for Retained introns specifically
-  message(format(Sys.time(), "%b %e %H:%M:%S")," Obtaining retained intron junctions")
+  cli::cli_alert_info(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")),"Obtaining retained intron junctions"))
   retained.introns <- .find_retained_intron(disjoint.exons, introns.nr)
   
   
   ## Classify non-RI events and merge 
-  message(format(Sys.time(), "%b %e %H:%M:%S")," Classifying splicing events")
+  cli::cli_alert_info(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")),"Classifying splicing events"))
   exon.juncs <- .classify_events(exon.juncs)
   full.exon.juncs <- rbind(exon.juncs, retained.introns)
   full.exon.juncs$exon_pos <- NULL
@@ -86,7 +89,8 @@ findASevents <- function(gtf){
   ## 2) exon-junction pairs
   ### This should include:
   ### - exon coordinates, junction coordinates, junction type
-  
+  cli::cli_alert_info(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")),"Creating outputs"))
+    
   exon.meta <- full.exon.juncs %>% 
     dplyr::mutate(exon_id = paste0(exon_coord,"_",gene_id,"_",gene_name)) %>% 
     dplyr::select(exon_id, exon_coord, gene_id, gene_name, strand, transcript_ids, AStype)
@@ -96,8 +100,8 @@ findASevents <- function(gtf){
     dplyr::select(exon_id, junc_coord, junc_type)
   
   output <- list(exon.meta, exon.junction.pairs)
-  names(output) <- c("exon.meta", "exon.junction.pairs")
-  message(format(Sys.time(), "%b %e %H:%M:%S"), " Completed")
+  names(output) <- c("meta", "pairs")
+  cli::cli_alert_success(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")), "Completed"))
   
   return(output)
     
