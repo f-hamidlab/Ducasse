@@ -6,7 +6,7 @@
 #' @importFrom dplyr %>%
 #TODO: Need a better name for this function
 findASevents <- function(gtf){
-    
+  message(format(Sys.time(), "%b %e %H:%M:%S"), " Reading GenomicRanges object or GTF file")
   ## Check for GenomicRanges object or a valid GTF file 
   if(!class(gtf) %in% "GRanges"){
     if(is_valid_file(gtf)){
@@ -27,6 +27,9 @@ findASevents <- function(gtf){
   }
   
   ## Prefilter for genes with at least 2 multiexonic transcripts
+  
+  message(format(Sys.time(), "%b %e %H:%M:%S")," Filtering genes")
+  
   filtered_genes <- gtf %>%
     as.data.frame() %>%
     dplyr::filter(type=="exon") %>%
@@ -59,14 +62,18 @@ findASevents <- function(gtf){
   
     
   ## Pair up all disjointed exons with spliced and skipped intron junctions
+  
+  message(format(Sys.time(), "%b %e %H:%M:%S")," Obtaining exon and intron junction pairs")
   exon.juncs <- .get_juncs(disjoint.exons, introns.nr)
   
   
   ## Get junctions for Retained introns specifically
+  message(format(Sys.time(), "%b %e %H:%M:%S")," Obtaining retained intron junctions")
   retained.introns <- .find_retained_intron(disjoint.exons, introns.nr)
   
   
   ## Classify non-RI events and merge 
+  message(format(Sys.time(), "%b %e %H:%M:%S")," Classifying splicing events")
   exon.juncs <- .classify_events(exon.juncs)
   full.exon.juncs <- rbind(exon.juncs, retained.introns)
   full.exon.juncs$exon_pos <- NULL
@@ -81,13 +88,16 @@ findASevents <- function(gtf){
   ### - exon coordinates, junction coordinates, junction type
   
   exon.meta <- full.exon.juncs %>% 
-    dplyr::select(exon_coord, gene_id, gene_name, strand, transcript_ids, AStype)
+    dplyr::mutate(exon_id = paste0(exon_coord,"_",gene_id,"_",gene_name)) %>% 
+    dplyr::select(exon_id, exon_coord, gene_id, gene_name, strand, transcript_ids, AStype)
   
   exon.junction.pairs <- full.exon.juncs %>% 
-    dplyr::select(exon_coord, junc_coord, junc_type)
+    dplyr::mutate(exon_id = paste0(exon_coord,"_",gene_id,"_",gene_name)) %>% 
+    dplyr::select(exon_id, junc_coord, junc_type)
   
   output <- list(exon.meta, exon.junction.pairs)
   names(output) <- c("exon.meta", "exon.junction.pairs")
+  message(format(Sys.time(), "%b %e %H:%M:%S"), " Completed")
   
   return(output)
     
