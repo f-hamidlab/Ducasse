@@ -33,3 +33,16 @@ is_gtf <- function(x) {
   }
   return(FALSE)
 }
+
+is_valid_file <- function(x){
+  if(class(x) %in% "character"){
+    if(stringr::str_detect(x, ".gtf")){
+      if(file.exists(x)){
+        return(TRUE)
+      }
+    }
+  }
+  return(FALSE)
+}
+
+

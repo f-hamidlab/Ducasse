@@ -1,78 +1,99 @@
 
-# TESTDATA:
-## We have test.gtf (GRanges object) that we can use to test the funcs
-
-
+#' Title
+#'
+#' @param gtf Path to....
+#'
+#' @return
+#' @export
+#'
+#' @examples
 #' @importFrom dplyr %>%
-#TODO: Need a better name for this function
-detection <- function(gtf){
+findASevents <- function(gtf){
     
-    # TODO: Check inputs
-    ## Can be path to gtf file or a GenomicRanges object
-    if(class(gtf) %in% "character"){
-      if(file.exists(gtf)){
-        gtf <- rtracklayer::import(gtf)
-      } else {
-        rlang::abort("GTF file does not exist")
-      }
+  ## Check for GenomicRanges object or a valid GTF file 
+  if(!class(gtf) %in% "GRanges"){
+    if(is_valid_file(gtf)){
+      gtf <- rtracklayer::import(gtf)
+    } else {
+      rlang::abort("GTF file does not exist")
     }
+  }
   
-    # check GTF structure
-    if(!is_gtf(gtf)){
-      rlang::abort("Input is not a GTF file structure")
-    } else{
-      # check if gene_name column is present and if not, use "gene_id" column
-      if(!"gene_name" %in% colnames(S4Vectors::mcols(gtf))){
-        gtf$gene_name <- gtf$gene_id
-      }
+  ## Check for proper GTF structure
+  if(!is_gtf(gtf)){
+    rlang::abort("Input is not a GTF file structure")
+  } else{
+    # check if gene_name column is present and if not, use "gene_id" column
+    if(!"gene_name" %in% colnames(S4Vectors::mcols(gtf))){
+      gtf$gene_name <- gtf$gene_id
     }
+  }
   
-    # TODO: Prefilter for genes with at least 2 multi-exonic transcripts
-    transcript_counts <- table(GenomicRanges::mcols(gtf)$transcript_id)
-    transcripts <- gtf[gtf$type == "transcript"]
-    multi_transcripts <- transcript_counts[transcript_counts > 2]
-    transcripts_filtered <- transcripts[transcripts$transcript_id %in% names(multi_transcripts)]
-    gene_ids <- table(GenomicRanges::mcols(transcripts_filtered)$gene_id)
-    multi_exonic_genes <- names(gene_ids[gene_ids > 1])
-    gtf <- gtf[gtf$gene_id %in% multi_exonic_genes]
+  ## Prefilter for genes with at least 2 multiexonic transcripts
+  filtered_genes <- gtf %>%
+    as.data.frame() %>%
+    dplyr::filter(type=="exon") %>%
+    dplyr::group_by(gene_id, transcript_id) %>%
+    dplyr::tally() %>%
+    dplyr::filter(n > 2) %>%
+    dplyr::group_by(gene_id) %>%
+    dplyr::tally() %>%
+    dplyr::filter(n > 1)
+  gtf <- gtf[gtf$gene_id %in% filtered_genes$gene_id]
     
     
-    # get only exon entries from prefiltered GTF
-    exons <- gtf[gtf$type == "exon"]
+  ## Get only exon entries from prefiltered GTF
+  exons <- gtf[gtf$type == "exon"]
+  
+  ## Trim ends of transcripts to avoid TS and TE
+  exons <- .trim_ends_by_gene(exons) 
+  
+  ## Classify exons by position (First, Internal, Last)
+  exons <- .label_exon_class(exons)
     
-    # trim ends of transcripts to avoid TS and TE
-    exons <- .trim_ends_by_gene(exons)
+  ## Create a GenomicRanges object of all non-redundant introns
+  exonsbytx <- S4Vectors::split(exons, ~transcript_id)
+  intronsbytx <- GenomicRanges::psetdiff(BiocGenerics::unlist(range(exonsbytx)), exonsbytx)
+  introns.nr <- unique(unlist(intronsbytx))
+  names(introns.nr) <- NULL
+  
+  ## Create a disjointed version of all exons in each gene family
+  disjoint.exons <- .disjoin_by_gene(exons)
+  
     
-    # Create a GenomicRanges object of all non-redundant introns
-    exonsbytx <- S4Vectors::split(exons, ~transcript_id)
-    intronsbytx <- GenomicRanges::psetdiff(BiocGenerics::unlist(range(exonsbytx)), exonsbytx)
-    introns.nr <- unique(unlist(intronsbytx))
-    names(introns.nr) <- NULL
-    
-    # Create a disjointed version of all exons in each gene family
-    disjoint.exons <- .disjoin_by_gene(exons)
-
-    
-    # TODO:  Pair up all exons from disjoint.exons with flanking introns
-    ## GenomicRanges::findOverlaps
-    ## Output a df with these columns:
-    #   1. Exon coordinate
-    #   2. Intron coordinate for each hit
-    #   3. Position (Upstream or downstream)
-    exon.intron.pairs <- .pair_by_exon_intron(disjoint.exons, introns.nr)
-    
-    # TODO:  Pair up all exons with "skipping" introns
-    #Find exons that are within intron coordinates
-    skipped.exons <- .find_skipped_exons(exon.intron.pairs, introns.nr)
-    
-    # TODO: Get junctions for Retained introns
-    
-    # TODO: Classify events
-    
-    # TODO:  Output
-    ## 1) metadata of all exons, 2) adjacency matrix of exons and flanking introns
-    ## 3) adjacency matrix of exons and skipped introns
-    return()
+  ## Pair up all disjointed exons with spliced and skipped intron junctions
+  exon.juncs <- .get_juncs(disjoint.exons, introns.nr)
+  
+  
+  ## Get junctions for Retained introns specifically
+  retained.introns <- .find_retained_intron(disjoint.exons, introns.nr)
+  
+  
+  ## Classify non-RI events and merge 
+  exon.juncs <- .classify_events(exon.juncs)
+  full.exon.juncs <- rbind(exon.juncs, retained.introns)
+  full.exon.juncs$exon_pos <- NULL
+  
+  
+  # TODO:  Output a list object containing:
+  ## 1) metadata of all exons
+  ### This should include:
+  ### - exon coordinates, gene_id, gene_name, strand, transcript_ids, AStype
+  ## 2) exon-junction pairs
+  ### This should include:
+  ### - exon coordinates, junction coordinates, junction type
+  
+  exon.meta <- full.exon.juncs %>% 
+    dplyr::select(exon_coord, gene_id, gene_name, strand, transcript_ids, AStype) %>% 
+    dplyr::distinct()
+  
+  exon.junction.pairs <- full.exon.juncs %>% 
+    dplyr::select(exon_coord, junc_coord, junc_type)
+  
+  output <- list(exon.meta, exon.junction.pairs)
+  names(output) <- c("meta", "pairs")
+  
+  return(output)
     
 }
 
@@ -100,70 +121,194 @@ detection <- function(gtf){
   
 }
 
+#group by transcript id and label first and last exons
+.label_exon_class <- function(x){
+  y <- x %>% 
+    as.data.frame() %>% 
+    dplyr::group_by(transcript_id) %>% 
+    dplyr::mutate(exon_pos = dplyr::case_when(
+      start==min(start) & strand == "+" ~ "first",
+      end==max(end) & strand == "+" ~ "last",
+      start==min(start) & strand == "-" ~ "last",
+      end==max(end) & strand == "-" ~ "first",
+      .default = "internal"
+    ))
+  x$exon_pos <- y$exon_pos
+  return(x)
+}
+
 .disjoin_by_gene <- function(x){
+    # actual disjoin function
     y <- GenomicRanges::disjoin(S4Vectors::split(x, ~gene_id))
+    
+    # create gene_id metacolumn
     y <- y %>% 
         as.data.frame() %>% 
         dplyr::mutate(gene_id = group_name) %>% 
         dplyr::select(seqnames:gene_id) %>% 
         GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = TRUE)
     
+    # link up disjointed exons to original exons
     y$order <- 1:length(y)
     out <- IRanges::findOverlapPairs(y, x, type="within")
     out <- out[S4Vectors::first(out)$gene_id == S4Vectors::second(out)$gene_id ]
     
+    # clean output by labeling exon positions, nesting transcript ids and
+    # get gene name
     out <- out %>% 
         as.data.frame() %>% 
-        dplyr::select(order = first.order, gene_name = second.gene_name, 
-                      transcript_id = second.transcript_id) %>% 
+        dplyr::select(order = first.order, 
+                      gene_name = second.gene_name, 
+                      transcript_id = second.transcript_id,
+                      exon_pos = second.exon_pos) %>% 
+        dplyr::mutate(exon_pos = factor(exon_pos, c("internal", "first","last"))) %>%
         dplyr::group_by(order) %>% 
+        dplyr::arrange(exon_pos) %>%
         dplyr::summarise(gene_name = gene_name[1], 
-                         transcript_id = paste0(transcript_id, collapse = ";"))
+                         transcript_id = paste0(transcript_id, collapse = ";"),
+                         exon_pos = exon_pos[1])
     y$gene_name <- out$gene_name
     y$transcript_ids <- out$transcript_id
+    y$exon_pos <- as.character(out$exon_pos)
     y$order <- NULL
     
     return(y)
 }
 
-.pair_by_exon_intron <- function(x, y){
-    x$index <- 1:length(x)
+# wrapper function to run subfunctions to get spliced junc and skipped junc
+.get_juncs <- function(x, y){
+  exon.spljunc <- .get_spljunc(x,y)
+  out <- .add_skipjunc(exon.spljunc, y)
+  
+  return(out)
+}
+
+
+.get_spljunc <- function(x, y){
+  # get adjacent introns for each disjointed exon
   overlap <- IRanges::findOverlapPairs(x, y, maxgap = 0L)
-  adjacent <- subset(overlap, IRanges::start(first) == IRanges::end(second) + 1L | 
-                       IRanges::end(first) == IRanges::start(second) - 1L)
+  adjacent <- subset(overlap, 
+                     IRanges::start(first) == IRanges::end(second) + 1L | 
+                     IRanges::end(first) == IRanges::start(second) - 1L)
   
+  # label type of junction
   pair_df <- as.data.frame(adjacent) %>% 
-    dplyr::mutate(position = ifelse(first.X.start == second.end + 1, "Upstream", "Downstream")) %>% 
-    dplyr::select(original.index=first.index,  position) %>% 
-    dplyr::mutate(overlapped.index = dplyr::row_number())
-  GenomicRanges::mcols(adjacent) <- pair_df
-  
-  # disjoint_df <- as.data.frame(x) %>% 
-  #   dplyr::mutate(exonCoord = paste0(seqnames, "_", start, ":", end)) %>% 
-  #   dplyr::select(exonCoord)
-  # 
-  # merge <- dplyr::full_join(x = disjoint_df, y = pair_df, "exonCoord")
+    dplyr::mutate(position = ifelse(first.X.start == second.end + 1, "Upstream", "Downstream")) 
+  GenomicRanges::mcols(adjacent)$position <- pair_df$position
   
   return(adjacent)
 }        
    
-.find_skipped_exons <- function(x, y){
-  skipped_exons <- IRanges::findOverlapPairs(x, y, type = "within")
-  se_df <- as.data.frame(skipped_exons) %>% 
-    dplyr::mutate(exon = paste0(first.first.X.seqnames, "_", first.first.X.start, ":", first.first.X.end),
-           flankingIntron = paste0(first.second.seqnames,"_",first.second.start,":",first.second.end),
-           exonInIntron = paste0(second.seqnames,"_",second.start,":",second.end)) %>% 
-    dplyr::select(exon, exonInIntron, flankingIntron, position = first.position, strand = first.first.X.strand)
+.add_skipjunc <- function(x, y){
+  # get introns that are covering entire exon
+  overlap <- IRanges::findOverlapPairs(x, y, type = "within")
   
-  return(se_df)
+  # extract pairs object
+  x.overlap <- S4Vectors::first(overlap)
+  y.overlap <- S4Vectors::second(overlap)
+  
+  # get exons and its skipped junction pair
+  exon.w.skipjunc <- as.data.frame(overlap) %>% 
+    dplyr::mutate(exon_coord = .get_coord(S4Vectors::first(x.overlap)),
+                  junc_coord = .get_coord(y.overlap),
+                  junc_type = "Skipped") %>% 
+    dplyr::distinct(exon_coord,junc_coord, .keep_all = TRUE) %>%  
+    dplyr::select(exon_coord, junc_coord, 
+                  gene_id = first.first.gene_id,
+                  gene_name = first.first.gene_name,
+                  transcript_ids = first.first.transcript_ids,
+                  strand = first.first.X.strand, 
+                  junc_type,
+                  exon_pos=first.first.exon_pos)
+  
+  # get exons and its spliced junction pair
+  exon.w.spljunc <- as.data.frame(overlap) %>% 
+    dplyr::mutate(exon_coord = .get_coord(S4Vectors::first(x.overlap)),
+                  junc_coord = .get_coord(S4Vectors::second(x.overlap))) %>% 
+    dplyr::distinct(exon_coord,junc_coord, .keep_all = TRUE) %>% 
+    dplyr::select(exon_coord,junc_coord, 
+                  gene_id = first.first.gene_id,
+                  gene_name = first.first.gene_name,
+                  transcript_ids = first.first.transcript_ids,
+                  strand=first.first.X.strand,
+                  junc_type=first.position,
+                  exon_pos=first.first.exon_pos)
+  
+  return(rbind(exon.w.spljunc, exon.w.skipjunc))
+ 
 } 
 
 
+.find_retained_intron <- function(x, y){
+  retained_intron <- IRanges::findOverlapPairs(x, y, type = "equal")
+  
+  # get "skipped" junction of RI and prep output
+  ri_skipped <- as.data.frame(retained_intron) %>% 
+    dplyr::mutate(exon_coord = .get_coord(S4Vectors::first(retained_intron)), 
+                  junc_coord = exon_coord,
+                  junc_type = "Skipped") %>% 
+    dplyr::select(exon_coord,junc_coord, 
+                  gene_id = first.gene_id,
+                  gene_name = first.gene_name,
+                  transcript_ids = first.transcript_ids,
+                  strand=first.X.strand,
+                  junc_type,
+                  exon_pos=first.exon_pos)
+  
+  # get first and last coord of RI
+  ri_resized_up <- GenomicRanges::resize(S4Vectors::first(retained_intron), 1)
+  ri_resized_dn <- GenomicRanges::resize(S4Vectors::first(retained_intron), 1, 
+                                         fix = "end")
+  
+  # prepare output of "spliced" coordinates of RI
+  ri_spliced <- as.data.frame(retained_intron) %>% 
+    dplyr::mutate(exon_coord = .get_coord(S4Vectors::first(retained_intron)), 
+                  Upstream = .get_coord(ri_resized_up),
+                  Downstream = .get_coord(ri_resized_dn)) %>% 
+    dplyr::select(exon_coord,Upstream, Downstream,
+                  gene_id = first.gene_id,
+                  gene_name = first.gene_name,
+                  transcript_ids = first.transcript_ids,
+                  strand=first.X.strand,
+                  exon_pos=first.exon_pos) %>%
+    tidyr::pivot_longer(Upstream:Downstream, names_to = "junc_type", 
+                        values_to = "junc_coord")
+  
+  
+  ri_df <- rbind(ri_skipped,ri_spliced)
+  ri_df$AStype <- "RI"
+  
+  return(ri_df)
+}
 
+.classify_events <- function(x,y){
+  
+  # get distinct exon_coord and junc_type and pivot junc_type
+  x.pivoted <- x %>%
+    dplyr::select(-junc_coord) %>%
+    dplyr::distinct() %>%
+    dplyr::mutate(score = TRUE) %>%
+    tidyr::pivot_wider(names_from = junc_type, values_from = score, 
+                       values_fill = FALSE)
+  
+  # classify events based on exon_pos and presence of Upstream and Downstream junc
+  # the last bit handles AD and AA events on the negative strand
+  x.classified <- x.pivoted %>% 
+    dplyr::mutate(AStype = dplyr::case_when(
+      exon_pos=="first" ~ "AF",
+      exon_pos=="last" ~ "AL",
+      Skipped & Downstream & Upstream ~"CE",
+      Skipped & Downstream ~ "Ad",
+      Skipped & Upstream ~ "Aa"
+    )) %>%
+    dplyr::mutate(AStype = ifelse(strand == "-", chartr("ad", "da", AStype), AStype)) %>%
+    dplyr::mutate(AStype = toupper(AStype)) %>%
+    dplyr::select(exon_coord, gene_id, AStype)
+  
+  x %>%
+    dplyr::left_join(x.classified, by = c("exon_coord","gene_id"))
 
-
-
-
+}
 
 
 
