@@ -120,32 +120,31 @@ findASevents <- function(gtf){
     dplyr::group_by(transcript_id) %>%
     dplyr::arrange(start) %>%
     dplyr::mutate(pos = dplyr::row_number()) %>%
-    dplyr::mutate(pos = dplyr::case_when(pos == 1 ~ "First",
-                                         pos == dplyr::n() ~ "Last",
+    dplyr::mutate(pos = dplyr::case_when(pos == 1 ~ "first",
+                                         pos == dplyr::n() ~ "last",
                                          .default = "a.internal")) %>%
     dplyr::group_by(seqnames, end, gene_id) %>%
-    dplyr::arrange(pos, dplyr::desc(start)) %>%
-    dplyr::mutate(start = ifelse(pos == "First", start[1], start)) %>%
-    dplyr::group_by(seqnames, start, gene_id) %>%
-    dplyr::arrange(dplyr::desc(pos), dplyr::desc(end)) %>%
-    dplyr::mutate(end = ifelse(pos == "Last", end[dplyr::n()], end)) %>%
+    dplyr::arrange(pos, start) %>% 
+    dplyr::mutate(start = ifelse(pos == "first", start[1], start)) %>% 
+    dplyr::group_by(seqnames, start, gene_id) %>% 
+    dplyr::arrange(dplyr::desc(pos), dplyr::desc(end)) %>% 
+    dplyr::mutate(end = ifelse(pos == "last", end[dplyr::n()], end)) %>%
     dplyr::ungroup() %>%
     dplyr::select(-pos) %>%
-    dplyr::arrange(seqnames, gene_id, transcript_id, start) %>%
+    dplyr::arrange(seqnames, gene_id, transcript_id, start) %>% 
     GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = T)
   
 }
-
 #group by transcript id and label first and last exons
 .label_exon_class <- function(x){
   y <- x %>% 
     as.data.frame() %>% 
     dplyr::group_by(transcript_id) %>% 
     dplyr::mutate(exon_pos = dplyr::case_when(
-      start==min(start) & strand == "+" ~ "first",
-      end==max(end) & strand == "+" ~ "last",
-      start==min(start) & strand == "-" ~ "last",
-      end==max(end) & strand == "-" ~ "first",
+      start==min(start) ~ "first",
+      end==max(end)  ~ "last",
+      # start==min(start) & strand == "-" ~ "last",
+      # end==max(end) & strand == "-" ~ "first",
       .default = "internal"
     ))
   x$exon_pos <- y$exon_pos
@@ -200,6 +199,9 @@ findASevents <- function(gtf){
 
 
 .get_spljunc <- function(x, y){
+  # make temp id of disjointed exons
+  GenomicRanges::mcols(x)$index <- 1:length(x)
+  
   # get adjacent introns for each disjointed exon
   overlap <- IRanges::findOverlapPairs(x, y, maxgap = 0L)
   adjacent <- subset(overlap, 
@@ -215,39 +217,44 @@ findASevents <- function(gtf){
 }        
    
 .add_skipjunc <- function(x, y){
+  
   # get introns that are covering entire exon
-  overlap <- IRanges::findOverlapPairs(x, y, type = "within")
+  overlap <- IRanges::findOverlapPairs(S4Vectors::first(x), y, type = "within")
   
   # extract pairs object
-  x.overlap <- S4Vectors::first(overlap)
+  x.overlap <- S4Vectors::first(x)
   y.overlap <- S4Vectors::second(overlap)
   
   # get exons and its skipped junction pair
   exon.w.skipjunc <- as.data.frame(overlap) %>% 
-    dplyr::mutate(exon_coord = .get_coord(S4Vectors::first(x.overlap)),
-                  junc_coord = .get_coord(y.overlap),
+    dplyr::mutate(exon_coord = .get_coord(S4Vectors::first(overlap)),
+                  junc_coord = .get_coord(S4Vectors::second(overlap)),
                   junc_type = "Skipped") %>% 
-    dplyr::distinct(exon_coord,junc_coord, .keep_all = TRUE) %>%  
+    dplyr::distinct(first.index,junc_coord, .keep_all = TRUE) %>%  
     dplyr::select(exon_coord, junc_coord, 
-                  gene_id = first.first.gene_id,
-                  gene_name = first.first.gene_name,
-                  transcript_ids = first.first.transcript_ids,
-                  strand = first.first.X.strand, 
+                  gene_id = first.gene_id,
+                  gene_name = first.gene_name,
+                  transcript_ids = first.transcript_ids,
+                  strand = first.X.strand, 
                   junc_type,
-                  exon_pos=first.first.exon_pos)
+                  exon_pos=first.exon_pos,
+                  first.index)
   
   # get exons and its spliced junction pair
-  exon.w.spljunc <- as.data.frame(overlap) %>% 
-    dplyr::mutate(exon_coord = .get_coord(S4Vectors::first(x.overlap)),
-                  junc_coord = .get_coord(S4Vectors::second(x.overlap))) %>% 
-    dplyr::distinct(exon_coord,junc_coord, .keep_all = TRUE) %>% 
+  exon.w.spljunc <- as.data.frame(x) %>% 
+    dplyr::mutate(exon_coord = .get_coord(S4Vectors::first(x)),
+                  junc_coord = .get_coord(S4Vectors::second(x))) %>% 
+    dplyr::filter(first.index %in% exon.w.skipjunc$first.index) %>%
+    dplyr::distinct(first.index,junc_coord, .keep_all = TRUE) %>% 
     dplyr::select(exon_coord,junc_coord, 
-                  gene_id = first.first.gene_id,
-                  gene_name = first.first.gene_name,
-                  transcript_ids = first.first.transcript_ids,
-                  strand=first.first.X.strand,
-                  junc_type=first.position,
-                  exon_pos=first.first.exon_pos)
+                  gene_id = first.gene_id,
+                  gene_name = first.gene_name,
+                  transcript_ids = first.transcript_ids,
+                  strand=first.X.strand,
+                  junc_type=position,
+                  exon_pos=first.exon_pos)
+  
+  exon.w.skipjunc$first.index <- NULL
   
   return(rbind(exon.w.spljunc, exon.w.skipjunc))
  
@@ -298,8 +305,14 @@ findASevents <- function(gtf){
 
 .classify_events <- function(x,y){
   
+  # test if edges of exon and introns are exact
+  x$common.edge <- .testedges(x$exon_coord, x$junc_coord)
+  
   # get distinct exon_coord and junc_type and pivot junc_type
   x.pivoted <- x %>%
+    dplyr::group_by(exon_coord, gene_id) %>%
+    dplyr::mutate(common.edge = any(common.edge)) %>%
+    dplyr::ungroup() %>%
     dplyr::select(-junc_coord) %>%
     dplyr::distinct() %>%
     dplyr::mutate(score = TRUE) %>%
@@ -310,20 +323,26 @@ findASevents <- function(gtf){
   # the last bit handles AD and AA events on the negative strand
   x.classified <- x.pivoted %>% 
     dplyr::mutate(AStype = dplyr::case_when(
-      exon_pos=="first" ~ "AF",
-      exon_pos=="last" ~ "AL",
       Skipped & Downstream & Upstream ~"CE",
-      Skipped & Downstream ~ "Ad",
-      Skipped & Upstream ~ "Aa"
+      Skipped & Downstream & exon_pos=="first" & !common.edge ~ "Af",
+      Skipped & Upstream & exon_pos=="last" & !common.edge~ "Al",
+      Skipped & Downstream & common.edge ~ "Ad",
+      Skipped & Upstream & common.edge ~ "Aa"
     )) %>%
-    dplyr::mutate(AStype = ifelse(strand == "-", chartr("ad", "da", AStype), AStype)) %>%
-    dplyr::mutate(AStype = toupper(AStype)) %>%
+    dplyr::mutate(AStype = ifelse(strand == "-", chartr("adfl", "dalf", AStype), AStype)) %>%
+    dplyr::mutate(AStype = toupper(AStype)) %>% 
     dplyr::select(exon_coord, gene_id, AStype)
   
-  x %>%
+  x %>% 
+    dplyr::select(-common.edge) %>%
     dplyr::left_join(x.classified, by = c("exon_coord","gene_id"))
-
+  
 }
 
-
+.testedges <- function(x, y){
+  x <- as(x, "GRanges")
+  y <- as(y, "GRanges")
+  GenomicRanges::start(x) == GenomicRanges::start(y) |
+    GenomicRanges::end(x) == GenomicRanges::end(y)
+}
 
