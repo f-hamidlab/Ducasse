@@ -3,10 +3,8 @@
 #'
 #' @param gtf Path to....
 #'
-#' @return
 #' @export
 #'
-#' @examples
 #' @importFrom dplyr %>%
 findASevents <- function(gtf){
   cli::cli_alert_info(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")), "Reading GenomicRanges object or GTF file"))
