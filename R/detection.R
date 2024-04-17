@@ -6,7 +6,7 @@
 #' @export
 #'
 #' @importFrom dplyr %>%
-findASevents <- function(gtf){
+findASevents <- function(gtf, min_intron_length = 10){
   cli::cli_alert_info(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")), "Reading GenomicRanges object or GTF file"))
   ## Check for GenomicRanges object or a valid GTF file 
   if(!class(gtf) %in% "GRanges"){
@@ -73,7 +73,7 @@ findASevents <- function(gtf){
   
   ## Get junctions for Retained introns specifically
   cli::cli_alert_info(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")),"Obtaining retained intron junctions"))
-  retained.introns <- .find_retained_intron(disjoint.exons, introns.nr)
+  retained.introns <- .find_retained_intron(disjoint.exons, introns.nr, min_intron_length)
   
   
   ## Classify non-RI events and merge 
@@ -259,9 +259,9 @@ findASevents <- function(gtf){
 } 
 
 
-.find_retained_intron <- function(x, y){
+.find_retained_intron <- function(x, y, min_len){
   retained_intron <- IRanges::findOverlapPairs(x, y, type = "equal")
-  
+  retained_intron <- retained_intron[GenomicRanges::width(S4Vectors::first(retained_intron)) > min_len]
   # get "skipped" junction of RI and prep output
   ri_skipped <- as.data.frame(retained_intron) %>% 
     dplyr::mutate(exon_coord = .get_coord(S4Vectors::first(retained_intron)), 
