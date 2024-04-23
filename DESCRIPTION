@@ -9,7 +9,12 @@ Depends: R (>= 4.2)
 biocViews: ?
 Imports:
     dplyr,
-    BiocGenerics (>= 0.38)
+    BiocGenerics (>= 0.38),
+    IRanges,
+    cli,
+    rlang,
+    stringr,
+    tidyr
 License: file LICENSE
 Encoding: UTF-8
 ByteCompile: true
@@ -18,7 +23,8 @@ Suggests:
     testthat (>= 3.0.0),
     GenomicRanges,
     S4Vectors,
-    rtracklayer
+    rtracklayer,
+    knitr
 VignetteBuilder: knitr
 LazyData: TRUE
 BiocType: Software
