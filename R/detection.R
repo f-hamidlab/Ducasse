@@ -1,11 +1,15 @@
-#' Title
+#' Classify alternative splicing events and its splice junctions
+#' 
 #'
-#' @param gtf Path to....
-#'
+#' @param gtf Can be path to a GTF transcriptome file or a GenomicRanges object
+#' containing exon and transcript coordinates of each transcript. The latter
+#' object should contain the metadata gene_id, transcript_id and type.
+#' 
+#' @param min_RI_length Minimum retained intron length 
 #' @export
 #'
 #' @importFrom dplyr %>%
-findASevents <- function(gtf, min_intron_length = 10){
+findASevents <- function(gtf, min_RI_length = 10){
   cli::cli_alert_info(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")), "Reading GenomicRanges object or GTF file"))
   ## Check for GenomicRanges object or a valid GTF file 
   if(!class(gtf) %in% "GRanges"){
@@ -72,7 +76,7 @@ findASevents <- function(gtf, min_intron_length = 10){
   
   ## Get junctions for Retained introns specifically
   cli::cli_alert_info(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")),"Obtaining retained intron junctions"))
-  retained.introns <- .find_retained_intron(disjoint.exons, introns.nr, min_intron_length)
+  retained.introns <- .find_retained_intron(disjoint.exons, introns.nr, min_RI_length)
   
   
   ## Classify non-RI events and merge 
