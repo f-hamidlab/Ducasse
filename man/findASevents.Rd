@@ -2,13 +2,17 @@
 % Please edit documentation in R/detection.R
 \name{findASevents}
 \alias{findASevents}
-\title{Title}
+\title{Classify alternative splicing events and its splice junctions}
 \usage{
-findASevents(gtf)
+findASevents(gtf, min_RI_length = 10)
 }
 \arguments{
-\item{gtf}{Path to....}
+\item{gtf}{Can be path to a GTF transcriptome file or a GenomicRanges object
+containing exon and transcript coordinates of each transcript. The latter
+object should contain the metadata gene_id, transcript_id and type.}
+
+\item{min_RI_length}{Minimum retained intron length}
 }
 \description{
-Title
+Classify alternative splicing events and its splice junctions
 }
