@@ -299,7 +299,11 @@ findASevents <- function(gtf, min_RI_length = 10){
   
   
   ri_df <- rbind(ri_skipped,ri_spliced)
-  ri_df$AStype <- "RI"
+  
+  if(nrow(ri_df) > 0){
+      ri_df$AStype <- "RI"
+  }
+  
   
   return(ri_df)
 }
