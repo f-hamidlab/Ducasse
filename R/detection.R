@@ -9,14 +9,24 @@
 #' @export
 #'
 #' @importFrom dplyr %>%
-findASevents <- function(gtf, min_RI_length = 10){
-  cli::cli_alert_info(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")), "Reading GenomicRanges object or GTF file"))
+findASevents <- function(gtf, min_RI_length = 10, verbose = TRUE){
+  
+  
+  
   ## Check for GenomicRanges object or a valid GTF file 
   if(!class(gtf) %in% "GRanges"){
     if(is_valid_file(gtf)){
+      if(verbose){
+        cli::cli_alert_info(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")), 
+                                  "Importing GTF file"))
+      }
       gtf <- rtracklayer::import(gtf)
     } else {
       rlang::abort("GTF file does not exist")
+    }
+    if(verbose){
+      cli::cli_alert_info(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")), 
+                                "Using GRanges object as input"))
     }
   }
   
@@ -96,13 +106,13 @@ findASevents <- function(gtf, min_RI_length = 10){
   cli::cli_alert_info(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")),"Creating outputs"))
     
   exon.meta <- full.exon.juncs %>% 
-    dplyr::mutate(exon_id = paste0(exon_coord,"_",gene_id,"_",gene_name)) %>% 
+    dplyr::mutate(exon_id = paste0(exon_coord,"_",gene_id,"_",gene_name, "_", AStype)) %>% 
     dplyr::select(exon_id, exon_coord, gene_id, gene_name, strand, transcript_ids, AStype) %>% 
     dplyr::distinct()
 
   
   exon.junction.pairs <- full.exon.juncs %>% 
-    dplyr::mutate(exon_id = paste0(exon_coord,"_",gene_id,"_",gene_name)) %>% 
+    dplyr::mutate(exon_id = paste0(exon_coord,"_",gene_id,"_",gene_name, "_", AStype)) %>% 
     dplyr::select(exon_id, junc_coord, junc_type)
   
   output <- list(exon.meta, exon.junction.pairs)
