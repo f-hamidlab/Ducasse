@@ -154,16 +154,15 @@ findASevents <- function(gtf, min_RI_length = 10, verbose = TRUE){
 
 #group by transcript id and label first and last exons
 .label_exon_class <- function(x){
-  y <- x %>% 
-    as.data.frame() %>% 
-    dplyr::group_by(transcript_id) %>% 
-    dplyr::mutate(exon_pos = dplyr::case_when(
-      start==min(start) ~ "first",
-      end==max(end)  ~ "last",
-      # start==min(start) & strand == "-" ~ "last",
-      # end==max(end) & strand == "-" ~ "first",
-      .default = "internal"
-    ))
+  y <- x %>%
+    as.data.frame() %>%
+    dplyr::group_by(transcript_id) %>%
+    dplyr::mutate(exon_pos = ifelse(
+      start==min(start), "first",
+      ifelse(end==max(end), "last", "internal"
+             # start==min(start) & strand == "-" ~ "last",
+             # end==max(end) & strand == "-" ~ "first",
+      )))
   x$exon_pos <- y$exon_pos
   return(x)
 }
@@ -325,6 +324,7 @@ findASevents <- function(gtf, min_RI_length = 10, verbose = TRUE){
   return(ri_df)
 }
 
+
 .classify_events <- function(x,y){
   
   # test if edges of exon and introns are exact
@@ -338,24 +338,24 @@ findASevents <- function(gtf, min_RI_length = 10, verbose = TRUE){
     dplyr::select(-junc_coord) %>%
     dplyr::distinct() %>%
     dplyr::mutate(score = TRUE) %>%
-    tidyr::pivot_wider(names_from = junc_type, values_from = score, 
+    tidyr::pivot_wider(names_from = junc_type, values_from = score,
                        values_fill = FALSE)
   
   # classify events based on exon_pos and presence of Upstream and Downstream junc
   # the last bit handles AD and AA events on the negative strand
-  x.classified <- x.pivoted %>% 
-    dplyr::mutate(AStype = dplyr::case_when(
-      Skipped & Downstream & Upstream ~"CE",
-      Skipped & Downstream & exon_pos=="first" & !common.edge ~ "Af",
-      Skipped & Upstream & exon_pos=="last" & !common.edge~ "Al",
-      Skipped & Downstream & common.edge ~ "Ad",
-      Skipped & Upstream & common.edge ~ "Aa"
-    )) %>%
+  x.classified <- x.pivoted %>%
+    dplyr::mutate(AStype =
+                    ifelse(Skipped & Downstream & Upstream , "CE",
+                    ifelse(Skipped & Downstream & exon_pos=="first" & !common.edge, "Af",
+                    ifelse(Skipped & Upstream & exon_pos=="last" & !common.edge, "Al",
+                    ifelse(Skipped & Downstream & common.edge, "Ad",
+                    ifelse(Skipped & Upstream & common.edge, "Aa",""))))
+                    )) %>%
     dplyr::mutate(AStype = ifelse(strand == "-", chartr("adfl", "dalf", AStype), AStype)) %>%
-    dplyr::mutate(AStype = toupper(AStype)) %>% 
+    dplyr::mutate(AStype = toupper(AStype)) %>%
     dplyr::select(exon_coord, gene_id, AStype)
   
-  x %>% 
+  x %>%
     dplyr::select(-common.edge) %>%
     dplyr::left_join(x.classified, by = c("exon_coord","gene_id"))
   
@@ -367,4 +367,3 @@ findASevents <- function(gtf, min_RI_length = 10, verbose = TRUE){
   GenomicRanges::start(x) == GenomicRanges::start(y) |
     GenomicRanges::end(x) == GenomicRanges::end(y)
 }
-
