@@ -128,24 +128,30 @@ findASevents <- function(gtf, min_RI_length = 10, verbose = TRUE){
   # trim-off TS and TE
   x %>%
     as.data.frame() %>%
+    dplyr::mutate(transcript_to_name = transcript_id) %>%
     dplyr::group_by(transcript_id) %>%
     dplyr::arrange(start) %>%
     dplyr::mutate(pos = dplyr::row_number()) %>%
-    dplyr::mutate(pos = dplyr::case_when(pos == 1 ~ "first",
-                                         pos == dplyr::n() ~ "last",
-                                         .default = "a.internal")) %>%
+    dplyr::mutate(pos = ifelse(pos == 1, "first",
+                               ifelse(pos == dplyr::n(),
+                                      "last","a.internal"))) %>%
     dplyr::group_by(seqnames, end, gene_id) %>%
-    dplyr::arrange(pos, start) %>% 
-    dplyr::mutate(start = ifelse(pos == "first", start[1], start)) %>% 
-    dplyr::group_by(seqnames, start, gene_id) %>% 
-    dplyr::arrange(dplyr::desc(pos), dplyr::desc(end)) %>% 
-    dplyr::mutate(end = ifelse(pos == "last", end[dplyr::n()], end)) %>%
+    dplyr::arrange(pos, start) %>%
+    dplyr::mutate(new.start = ifelse(pos == "first", start[1], start)) %>%
+    dplyr::mutate(transcript_to_name = ifelse(start != new.start, "", transcript_to_name)) %>%
+    dplyr::mutate(start = new.start) %>%
+    dplyr::group_by(seqnames, start, gene_id) %>%
+    dplyr::arrange(dplyr::desc(pos), dplyr::desc(end)) %>%
+    dplyr::mutate(new.end = ifelse(pos == "last", end[dplyr::n()], end)) %>%
+    dplyr::mutate(transcript_to_name = ifelse(end != new.end, "", transcript_to_name)) %>%
+    dplyr::mutate(end = new.end) %>%
     dplyr::ungroup() %>%
-    dplyr::select(-pos) %>%
-    dplyr::arrange(seqnames, gene_id, transcript_id, start) %>% 
+    dplyr::select(-pos,-new.end,-new.start) %>%
+    dplyr::arrange(seqnames, gene_id, transcript_id, start) %>%
     GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = T)
   
 }
+
 #group by transcript id and label first and last exons
 .label_exon_class <- function(x){
   y <- x %>% 
@@ -163,41 +169,42 @@ findASevents <- function(gtf, min_RI_length = 10, verbose = TRUE){
 }
 
 .disjoin_by_gene <- function(x){
-    # actual disjoin function
-    y <- GenomicRanges::disjoin(S4Vectors::split(x, ~gene_id))
-    
-    # create gene_id metacolumn
-    y <- y %>% 
-        as.data.frame() %>% 
-        dplyr::mutate(gene_id = group_name) %>% 
-        dplyr::select(seqnames:gene_id) %>% 
-        GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = TRUE)
-    
-    # link up disjointed exons to original exons
-    y$order <- 1:length(y)
-    out <- IRanges::findOverlapPairs(y, x, type="within")
-    out <- out[S4Vectors::first(out)$gene_id == S4Vectors::second(out)$gene_id ]
-    
-    # clean output by labeling exon positions, nesting transcript ids and
-    # get gene name
-    out <- out %>% 
-        as.data.frame() %>% 
-        dplyr::select(order = first.order, 
-                      gene_name = second.gene_name, 
-                      transcript_id = second.transcript_id,
-                      exon_pos = second.exon_pos) %>% 
-        dplyr::mutate(exon_pos = factor(exon_pos, c("internal", "first","last"))) %>%
-        dplyr::group_by(order) %>% 
-        dplyr::arrange(exon_pos) %>%
-        dplyr::summarise(gene_name = gene_name[1], 
-                         transcript_id = paste0(transcript_id, collapse = ";"),
-                         exon_pos = exon_pos[1])
-    y$gene_name <- out$gene_name
-    y$transcript_ids <- out$transcript_id
-    y$exon_pos <- as.character(out$exon_pos)
-    y$order <- NULL
-    
-    return(y)
+  # actual disjoin function
+  y <- GenomicRanges::disjoin(S4Vectors::split(x, ~gene_id))
+  
+  # create gene_id metacolumn
+  y <- y %>%
+    as.data.frame() %>%
+    dplyr::mutate(gene_id = group_name) %>%
+    dplyr::select(seqnames:gene_id) %>%
+    GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = TRUE)
+  
+  # link up disjointed exons to original exons
+  y$order <- 1:length(y)
+  out <- IRanges::findOverlapPairs(y, x, type="within")
+  out <- out[S4Vectors::first(out)$gene_id == S4Vectors::second(out)$gene_id ]
+  
+  # clean output by labeling exon positions, nesting transcript ids and
+  # get gene name
+  out <- out %>%
+    as.data.frame() %>%
+    dplyr::select(order = first.order,
+                  gene_name = second.gene_name,
+                  transcript_id = second.transcript_to_name,
+                  exon_pos = second.exon_pos) %>%
+    dplyr::filter(transcript_id != "") %>%
+    dplyr::mutate(exon_pos = factor(exon_pos, c("internal", "first","last"))) %>%
+    dplyr::group_by(order) %>%
+    dplyr::arrange(exon_pos) %>%
+    dplyr::summarise(gene_name = gene_name[1],
+                     transcript_id = paste0(transcript_id, collapse = ";"),
+                     exon_pos = exon_pos[1])
+  y$gene_name <- out$gene_name
+  y$transcript_ids <- out$transcript_id
+  y$exon_pos <- as.character(out$exon_pos)
+  y$order <- NULL
+  
+  return(y)
 }
 
 # wrapper function to run subfunctions to get spliced junc and skipped junc
