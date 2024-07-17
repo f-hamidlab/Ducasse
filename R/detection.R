@@ -115,8 +115,11 @@ findASevents <- function(gtf, min_RI_length = 10, verbose = TRUE){
     dplyr::mutate(exon_id = paste0(exon_coord,"_",gene_id,"_",gene_name, "_", AStype)) %>% 
     dplyr::select(exon_id, junc_coord, junc_type)
   
-  output <- list(exon.meta, exon.junction.pairs)
-  names(output) <- c("meta", "pairs")
+  tx.list <- .get_splice_skipped_txs(exon.meta, gtf)
+  exon.meta$transcript_ids <- NULL
+  
+  output <- list(exon.meta, exon.junction.pairs, tx.list)
+  names(output) <- c("meta", "pairs", "transcripts")
   cli::cli_alert_success(paste(cli::col_green(format(Sys.time(), "%b %e %H:%M:%S")), "Completed"))
   
   return(output)
@@ -367,3 +370,57 @@ findASevents <- function(gtf, min_RI_length = 10, verbose = TRUE){
   GenomicRanges::start(x) == GenomicRanges::start(y) |
     GenomicRanges::end(x) == GenomicRanges::end(y)
 }
+
+
+.get_splice_skipped_txs <- function(exon.meta, gtf){
+  txs <- gtf[gtf$type=="transcript"]
+  exon.gr <- GenomicRanges::GRanges(exon.meta$exon_coord, 
+                         strand = exon.meta$strand,
+                         exon_id = exon.meta$exon_id, 
+                         gene_id = exon.meta$gene_id)
+  
+  out <- IRanges::findOverlapPairs(exon.gr, txs)
+  out <- out[S4Vectors::first(out)$gene_id == S4Vectors::second(out)$gene_id ]
+  out <- out %>% 
+    as.data.frame() %>% 
+    dplyr::select(exon_id = first.X.exon_id,
+                  transcript_id = second.transcript_id) %>% 
+    dplyr::distinct()
+  
+  all.txs <- S4Vectors::split(out$transcript_id, out$exon_id)
+  spliced.txs <- str_split(exon.meta$transcript_ids, ";")
+  names(spliced.txs) <- exon.meta$exon_id
+  all.txs <- all.txs[names(spliced.txs)]
+  skipped.txs <- Map(setdiff, all.txs, spliced.txs) 
+  
+  return(list(spliced = spliced.txs,
+       skipped = skipped.txs))
+    
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
